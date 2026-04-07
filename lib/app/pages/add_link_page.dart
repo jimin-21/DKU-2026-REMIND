@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../routes/app_routes.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radii.dart';
-import '../services/firestore_service.dart';
 import '../services/analysis_service.dart';
 
 class AddLinkPage extends StatefulWidget {
@@ -14,7 +13,6 @@ class AddLinkPage extends StatefulWidget {
 
 class _AddLinkPageState extends State<AddLinkPage> {
   final TextEditingController urlController = TextEditingController();
-  final FirestoreService _firestoreService = FirestoreService();
   final AnalysisService _analysisService = AnalysisService();
 
   bool isLoading = false;
@@ -42,30 +40,14 @@ class _AddLinkPageState extends State<AddLinkPage> {
       if (isLinkMode) {
         final inputUrl = urlController.text.trim();
 
-        final analyzedData = await _analysisService.analyzeUrl(inputUrl);
+        final success = await _analysisService.analyzeUrl(inputUrl);
 
-        await _firestoreService.addPost(
-          url: (analyzedData['url'] ?? inputUrl).toString(),
-          title: (analyzedData['title'] ?? '분석 중인 링크').toString(),
-          summary: (analyzedData['summary'] ?? '').toString(),
-          tags: (analyzedData['tags'] as List<dynamic>? ?? [])
-              .map((e) => e.toString())
-              .toList(),
-          category: (analyzedData['category'] ?? '기타').toString(),
-          thumbnail: (analyzedData['thumbnail'] ?? '').toString(),
-          status: (analyzedData['status'] ?? 'ACTIVE').toString(),
-        );
+        if (!success) {
+          throw Exception('분석 및 저장 실패');
+        }
       } else {
         // 이미지 업로드 분석은 나중에 실제 파일 선택 + /analyze/image 연결
-        await _firestoreService.addPost(
-          url: 'uploaded_file',
-          title: '이미지 분석 결과',
-          summary: '',
-          tags: const [],
-          category: '기타',
-          thumbnail: '',
-          status: 'ACTIVE',
-        );
+        // 지금은 UI만 준비된 상태
       }
 
       if (!mounted) return;

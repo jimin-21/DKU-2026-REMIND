@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_categories.dart';
 import '../routes/app_routes.dart';
 import '../services/firestore_service.dart';
 import '../theme/app_colors.dart';
@@ -21,6 +22,7 @@ class _CollectionPageState extends State<CollectionPage> {
 
   final FirestoreService _firestoreService = FirestoreService();
   List<Map<String, dynamic>> collectedPosts = [];
+  List<String> mainCategoryNames = [];
   bool isLoading = true;
 
   @override
@@ -31,11 +33,19 @@ class _CollectionPageState extends State<CollectionPage> {
 
   Future<void> loadCollectedPosts() async {
     final data = await _firestoreService.getCollectedPosts();
+    final categories = await _firestoreService.getCategories();
 
     if (!mounted) return;
 
+    final mains = categories
+        .where((e) => (e['isMain'] ?? false) == true)
+        .map((e) => (e['name'] ?? '').toString().trim())
+        .where((name) => name.isNotEmpty)
+        .toList();
+
     setState(() {
       collectedPosts = data;
+      mainCategoryNames = mains;
       isLoading = false;
     });
   }
@@ -252,6 +262,16 @@ class _CollectionPageState extends State<CollectionPage> {
     }
   }
 
+  String? getSelectedMainCategoryName() {
+    final int dynamicIndex = categoryTab - AppCategories.fixedTabs.length;
+
+    if (dynamicIndex < 0 || dynamicIndex >= mainCategoryNames.length) {
+      return null;
+    }
+
+    return mainCategoryNames[dynamicIndex];
+  }
+
   @override
   Widget build(BuildContext context) {
     final filteredPosts = collectedPosts.where((post) {
@@ -261,12 +281,11 @@ class _CollectionPageState extends State<CollectionPage> {
       final query = searchQuery.toLowerCase();
       final isFavorite = post['isFavorite'] ?? false;
       final isDeleted = post['isDeleted'] ?? false;
-      final category = (post['category'] ?? '전체').toString();
+      final category = (post['category'] ?? '').toString();
 
       if (isDeleted == true) return false;
 
-
-      final categoryText = (post['category'] ?? '').toString().toLowerCase();
+      final categoryText = category.toLowerCase();
       final memo = (post['memo'] ?? '').toString().toLowerCase();
 
       final matchesSearch = title.contains(query) ||
@@ -280,10 +299,11 @@ class _CollectionPageState extends State<CollectionPage> {
 
       if (categoryTab == 0) return true;
       if (categoryTab == 1) return isFavorite == true;
-      if (categoryTab == 2) return category == '자기계발';
-      if (categoryTab == 3) return category == '운동';
-      if (categoryTab == 4) return category == '장소';
-      if (categoryTab == 5) return category == '쇼핑';
+
+      final selectedCategory = getSelectedMainCategoryName();
+      if (selectedCategory != null) {
+        return category == selectedCategory;
+      }
 
       return true;
     }).toList();

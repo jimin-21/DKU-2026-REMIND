@@ -1,18 +1,9 @@
 class AppCategories {
-  static const List<String> categories = [
-    '전체',
-    '즐겨찾기',
-    '자기계발',
-    '운동',
-    '장소',
-    '쇼핑',
-    '기타',
-  ];
+  static const String all = '전체';
+  static const String favorite = '즐겨찾기';
 
-  static const List<String> mainCategories = [
-    '자기계발',
-    '운동',
-    '장소',
-    '쇼핑',
+  static const List<String> fixedTabs = [
+    all,
+    favorite,
   ];
 }

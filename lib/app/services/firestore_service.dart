@@ -294,6 +294,16 @@ class FirestoreService {
     }
   }
 
+  Future<List<String>> getMainCategoryNames() async {
+    final categories = await getCategories();
+
+    return categories
+        .where((e) => (e['isMain'] ?? false) == true)
+        .map((e) => (e['name'] ?? '').toString().trim())
+        .where((name) => name.isNotEmpty)
+        .toList();
+  }
+
   Future<void> addCategory({
     required String name,
     bool isMain = false,
