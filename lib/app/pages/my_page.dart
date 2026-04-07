@@ -24,7 +24,7 @@ class _MyPageState extends State<MyPage> {
     } else if (tab == 1) {
       Navigator.pushNamed(context, AppRoutes.home);
     } else if (tab == 2) {
-      Navigator.pushNamed(context, AppRoutes.mine);
+      Navigator.pushNamed(context, AppRoutes.collection);
     }
   }
 
@@ -150,7 +150,9 @@ class _MyPageState extends State<MyPage> {
                     ),
                   ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
+                  onTap: () {
+                    Navigator.pushNamed(context, AppRoutes.trash);
+                  },
                 ),
               ],
             ),

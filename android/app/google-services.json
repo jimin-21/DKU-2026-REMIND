@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "57833784009",
+    "project_id": "resee-app",
+    "storage_bucket": "resee-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:57833784009:android:7f203adb17bf22f9914318",
+        "android_client_info": {
+          "package_name": "com.example.resee"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "57833784009-nh3s51h6tsn28bfc4g394bijfv1sq1vl.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBci65bMJopNnideOsXGSeVEDf467-DTtg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "57833784009-nh3s51h6tsn28bfc4g394bijfv1sq1vl.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

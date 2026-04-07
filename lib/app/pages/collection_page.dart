@@ -1,58 +1,53 @@
 import 'package:flutter/material.dart';
 import '../routes/app_routes.dart';
+import '../services/firestore_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/category_tabs.dart';
 import '../widgets/top_bar.dart';
-import '../services/firestore_service.dart';
 
-class ArchivePage extends StatefulWidget {
-  const ArchivePage({super.key});
+class CollectionPage extends StatefulWidget {
+  const CollectionPage({super.key});
 
   @override
-  State<ArchivePage> createState() => _ArchivePageState();
+  State<CollectionPage> createState() => _CollectionPageState();
 }
 
-class _ArchivePageState extends State<ArchivePage> {
-  int activeTab = 0;
+class _CollectionPageState extends State<CollectionPage> {
+  int activeTab = 2;
   int categoryTab = 0;
   String searchQuery = '';
   String sortOrder = 'recent';
 
   final FirestoreService _firestoreService = FirestoreService();
-  List<Map<String, dynamic>> posts = [];
+  List<Map<String, dynamic>> collectedPosts = [];
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    loadPosts();
+    loadCollectedPosts();
   }
 
-  Future<void> loadPosts() async {
-    final data = await _firestoreService.getPosts();
+  Future<void> loadCollectedPosts() async {
+    final data = await _firestoreService.getCollectedPosts();
 
     if (!mounted) return;
 
     setState(() {
-      posts = data;
+      collectedPosts = data;
       isLoading = false;
     });
   }
 
-  Future<void> toggleReadStatus(String id, bool currentValue) async {
-    await _firestoreService.updateReadStatus(id, !currentValue);
-    await loadPosts();
-  }
-
   Future<void> toggleFavoriteStatus(String id, bool currentValue) async {
     await _firestoreService.updateFavoriteStatus(id, !currentValue);
-    await loadPosts();
+    await loadCollectedPosts();
   }
 
   Future<void> togglePinnedStatus(String id, bool currentValue) async {
     await _firestoreService.updatePinnedStatus(id, !currentValue);
-    await loadPosts();
+    await loadCollectedPosts();
 
     if (!mounted) return;
 
@@ -65,15 +60,15 @@ class _ArchivePageState extends State<ArchivePage> {
     );
   }
 
-  Future<void> moveToCollection(String id) async {
-    await _firestoreService.updateCollectedStatus(id, true);
-    await loadPosts();
+  Future<void> moveToArchive(String id) async {
+    await _firestoreService.updateCollectedStatus(id, false);
+    await loadCollectedPosts();
 
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('컬렉션으로 이동했습니다.'),
+        content: Text('아카이브로 이동했습니다.'),
         duration: Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
       ),
@@ -82,7 +77,7 @@ class _ArchivePageState extends State<ArchivePage> {
 
   Future<void> moveToTrash(String id) async {
     await _firestoreService.moveToTrash(id);
-    await loadPosts();
+    await loadCollectedPosts();
 
     if (!mounted) return;
 
@@ -101,7 +96,7 @@ class _ArchivePageState extends State<ArchivePage> {
       builder: (context) {
         return AlertDialog(
           title: const Text('휴지통 이동'),
-          content: const Text('이 링크를 휴지통으로 이동할까요?'),
+          content: const Text('이 컬렉션을 휴지통으로 이동할까요?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -230,7 +225,7 @@ class _ArchivePageState extends State<ArchivePage> {
     final category = (post['category'] ?? '기타').toString();
     switch (category) {
       case '자기계발':
-        return ['#기록', '#습관'];
+        return ['#아침루틴', '#습관'];
       case '운동':
         return ['#헬스', '#기록'];
       case '장소':
@@ -245,32 +240,31 @@ class _ArchivePageState extends State<ArchivePage> {
   Color getCategoryChipColor(String category) {
     switch (category) {
       case '자기계발':
-        return const Color(0xFFF2E6E1);
+        return const Color(0xFFF6E5DF);
       case '운동':
         return const Color(0xFFDDEBE5);
       case '장소':
-        return const Color(0xFFE8E4F4);
+        return const Color(0xFFF5EFD9);
       case '쇼핑':
         return const Color(0xFFF7E5D9);
       default:
-        return const Color(0xFFF1F1F1);
+        return const Color(0xFFE8F0FA);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final filteredPosts = posts.where((post) {
+    final filteredPosts = collectedPosts.where((post) {
       final title = (post['title'] ?? '').toString().toLowerCase();
       final summary = (post['summary'] ?? '').toString().toLowerCase();
       final url = (post['url'] ?? '').toString().toLowerCase();
       final query = searchQuery.toLowerCase();
       final isFavorite = post['isFavorite'] ?? false;
       final isDeleted = post['isDeleted'] ?? false;
-      final isCollected = post['isCollected'] ?? false;
       final category = (post['category'] ?? '전체').toString();
 
       if (isDeleted == true) return false;
-      if (isCollected == true) return false;
+
 
       final categoryText = (post['category'] ?? '').toString().toLowerCase();
       final memo = (post['memo'] ?? '').toString().toLowerCase();
@@ -334,11 +328,34 @@ class _ArchivePageState extends State<ArchivePage> {
               },
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 34,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF4CDC4),
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                child: Text(
+                  '이번 주 나만의 컬렉션이 ${filteredPosts.length}개 쌓였어요',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.charcoal,
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 22, 16, 0),
               child: Row(
                 children: [
                   Text(
-                    '총 ${filteredPosts.length}개의 보관된 기록',
+                    '총 ${filteredPosts.length}개의 컬렉션',
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
@@ -355,23 +372,23 @@ class _ArchivePageState extends State<ArchivePage> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
-                        vertical: 10,
+                        vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF3F3F3),
-                        borderRadius: BorderRadius.circular(16),
+                        color: const Color(0xFFF3F4F4),
+                        borderRadius: BorderRadius.circular(18),
                       ),
                       child: Row(
                         children: [
                           Text(
                             sortOrder == 'recent' ? '최근 저장순' : '오래된 순',
                             style: const TextStyle(
+                              fontSize: 14,
                               fontWeight: FontWeight.w600,
                               color: AppColors.textSecondary,
-                              fontSize: 14,
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 8),
                           const Icon(
                             Icons.sort,
                             size: 18,
@@ -390,7 +407,7 @@ class _ArchivePageState extends State<ArchivePage> {
                   : filteredPosts.isEmpty
                       ? const Center(
                           child: Text(
-                            '저장된 링크가 없습니다.',
+                            '컬렉션이 없습니다.',
                             style: TextStyle(
                               fontSize: 16,
                               color: AppColors.textSecondary,
@@ -406,7 +423,6 @@ class _ArchivePageState extends State<ArchivePage> {
                           itemBuilder: (context, index) {
                             final post = filteredPosts[index];
                             final String id = post['id'] ?? '';
-                            final bool isRead = post['isRead'] ?? false;
                             final bool isFavorite = post['isFavorite'] ?? false;
                             final bool isPinned = post['isPinned'] ?? false;
                             final String category =
@@ -418,10 +434,6 @@ class _ArchivePageState extends State<ArchivePage> {
                                 getSummaryLines(post);
                             final List<String> tags = getTags(post);
 
-                            final Color cardBackgroundColor = isRead
-                                ? const Color(0xFFF6F6F6)
-                                : AppColors.surface;
-
                             return GestureDetector(
                               onTap: () {
                                 Navigator.pushNamed(
@@ -432,20 +444,19 @@ class _ArchivePageState extends State<ArchivePage> {
                               },
                               child: Container(
                                 decoration: BoxDecoration(
-                                  color: cardBackgroundColor,
-                                  borderRadius: BorderRadius.circular(28),
+                                  color: AppColors.surface,
+                                  borderRadius: BorderRadius.circular(30),
                                   boxShadow: const [
                                     BoxShadow(
-                                      color: Color(0x14000000),
-                                      blurRadius: 16,
+                                      color: Color(0x12000000),
+                                      blurRadius: 14,
                                       offset: Offset(0, 4),
                                     ),
                                   ],
                                 ),
                                 padding: const EdgeInsets.all(20),
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
                                       children: [
@@ -489,21 +500,6 @@ class _ArchivePageState extends State<ArchivePage> {
                                         const SizedBox(width: 8),
                                         GestureDetector(
                                           onTap: () async {
-                                            await toggleReadStatus(id, isRead);
-                                          },
-                                          child: Icon(
-                                            isRead
-                                                ? Icons.check_circle
-                                                : Icons.check_circle_outline,
-                                            size: 22,
-                                            color: isRead
-                                                ? const Color(0xFF95DDB4)
-                                                : AppColors.textDisabled,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        GestureDetector(
-                                          onTap: () async {
                                             await toggleFavoriteStatus(
                                               id,
                                               isFavorite,
@@ -531,8 +527,8 @@ class _ArchivePageState extends State<ArchivePage> {
                                                 id,
                                                 isPinned,
                                               );
-                                            } else if (value == 'collection') {
-                                              await moveToCollection(id);
+                                            } else if (value == 'archive') {
+                                              await moveToArchive(id);
                                             } else if (value == 'delete') {
                                               await showDeleteDialog(id);
                                             }
@@ -547,8 +543,8 @@ class _ArchivePageState extends State<ArchivePage> {
                                               ),
                                             ),
                                             const PopupMenuItem(
-                                              value: 'collection',
-                                              child: Text('컬렉션으로 이동'),
+                                              value: 'archive',
+                                              child: Text('아카이브로 이동'),
                                             ),
                                             const PopupMenuItem(
                                               value: 'delete',
@@ -564,17 +560,17 @@ class _ArchivePageState extends State<ArchivePage> {
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
+                                        fontSize: 19,
                                         fontWeight: FontWeight.w700,
-                                        fontSize: 18,
-                                        height: 1.4,
-                                        color: Colors.black,
+                                        height: 1.35,
+                                        color: AppColors.charcoal,
                                       ),
                                     ),
-                                    const SizedBox(height: 16),
+                                    const SizedBox(height: 18),
                                     ...summaryLines.map(
                                       (line) => Padding(
                                         padding:
-                                            const EdgeInsets.only(bottom: 8),
+                                            const EdgeInsets.only(bottom: 10),
                                         child: Row(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
@@ -587,8 +583,7 @@ class _ArchivePageState extends State<ArchivePage> {
                                               child: Text(
                                                 line,
                                                 maxLines: 2,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
+                                                overflow: TextOverflow.ellipsis,
                                                 style: const TextStyle(
                                                   fontSize: 14,
                                                   height: 1.6,
@@ -601,9 +596,9 @@ class _ArchivePageState extends State<ArchivePage> {
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(height: 14),
+                                    const SizedBox(height: 12),
                                     const Divider(color: AppColors.divider),
-                                    const SizedBox(height: 10),
+                                    const SizedBox(height: 12),
                                     Row(
                                       children: [
                                         Expanded(
@@ -614,8 +609,8 @@ class _ArchivePageState extends State<ArchivePage> {
                                               return Container(
                                                 padding:
                                                     const EdgeInsets.symmetric(
-                                                  horizontal: 10,
-                                                  vertical: 6,
+                                                  horizontal: 12,
+                                                  vertical: 7,
                                                 ),
                                                 decoration: BoxDecoration(
                                                   color:
@@ -643,7 +638,8 @@ class _ArchivePageState extends State<ArchivePage> {
                                               '원본 보기',
                                               style: TextStyle(
                                                 fontSize: 14,
-                                                color: AppColors.textSecondary,
+                                                color:
+                                                    AppColors.textSecondary,
                                                 fontWeight: FontWeight.w500,
                                               ),
                                             ),
@@ -651,7 +647,8 @@ class _ArchivePageState extends State<ArchivePage> {
                                             Icon(
                                               Icons.arrow_forward,
                                               size: 16,
-                                              color: AppColors.textSecondary,
+                                              color:
+                                                  AppColors.textSecondary,
                                             ),
                                           ],
                                         ),

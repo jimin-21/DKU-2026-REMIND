@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../routes/app_routes.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radii.dart';
+import '../services/firestore_service.dart';
+import '../services/analysis_service.dart';
 
 class AddLinkPage extends StatefulWidget {
   const AddLinkPage({super.key});
@@ -12,6 +14,8 @@ class AddLinkPage extends StatefulWidget {
 
 class _AddLinkPageState extends State<AddLinkPage> {
   final TextEditingController urlController = TextEditingController();
+  final FirestoreService _firestoreService = FirestoreService();
+  final AnalysisService _analysisService = AnalysisService();
 
   bool isLoading = false;
   bool isLinkMode = true;
@@ -34,15 +38,70 @@ class _AddLinkPageState extends State<AddLinkPage> {
       isLoading = true;
     });
 
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      if (isLinkMode) {
+        final inputUrl = urlController.text.trim();
 
-    if (!mounted) return;
+        final analyzedData = await _analysisService.analyzeUrl(inputUrl);
 
-    setState(() {
-      isLoading = false;
-    });
+        await _firestoreService.addPost(
+          url: (analyzedData['url'] ?? inputUrl).toString(),
+          title: (analyzedData['title'] ?? '분석 중인 링크').toString(),
+          summary: (analyzedData['summary'] ?? '').toString(),
+          tags: (analyzedData['tags'] as List<dynamic>? ?? [])
+              .map((e) => e.toString())
+              .toList(),
+          category: (analyzedData['category'] ?? '기타').toString(),
+          thumbnail: (analyzedData['thumbnail'] ?? '').toString(),
+          status: (analyzedData['status'] ?? 'ACTIVE').toString(),
+        );
+      } else {
+        // 이미지 업로드 분석은 나중에 실제 파일 선택 + /analyze/image 연결
+        await _firestoreService.addPost(
+          url: 'uploaded_file',
+          title: '이미지 분석 결과',
+          summary: '',
+          tags: const [],
+          category: '기타',
+          thumbnail: '',
+          status: 'ACTIVE',
+        );
+      }
 
-    Navigator.pushNamed(context, AppRoutes.home);
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('저장되었습니다.'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.archive,
+        (route) => false,
+      );
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('저장 중 오류가 발생했습니다.'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override
@@ -91,7 +150,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
                 ),
                 SizedBox(height: 18),
                 Text(
-                  '링크와 스크린샷을 분석하여\n핵심만 요약해 드려요!',
+                  '링크와 스크린샷을 분석하여\n핵심만 자동으로 저장해 드려요!',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
@@ -102,7 +161,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
                 ),
                 SizedBox(height: 12),
                 Text(
-                  '인스타그램, 블로그, 뉴스 등 링크와 이미지의\n핵심을 3줄로 정리합니다',
+                  '제목, 요약, 태그, 카테고리를\nAI가 자동으로 정리합니다',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: AppColors.textSecondary,
@@ -114,7 +173,6 @@ class _AddLinkPageState extends State<AddLinkPage> {
             ),
           ),
           const SizedBox(height: 24),
-
           Row(
             children: [
               Expanded(
@@ -170,9 +228,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
               ),
             ],
           ),
-
           const SizedBox(height: 28),
-
           if (isLinkMode) ...[
             const Text(
               '링크 주소',
@@ -222,6 +278,15 @@ class _AddLinkPageState extends State<AddLinkPage> {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+            const Text(
+              '카테고리, 제목, 요약, 태그는 자동으로 분석됩니다.',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                height: 1.6,
+              ),
+            ),
           ] else ...[
             Container(
               width: double.infinity,
@@ -252,7 +317,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '스크린샷이나 사진을 올리면\n핵심 내용을 분석해 드립니다',
+                    '이미지 분석 API 연결 전입니다.\n지금은 UI만 준비된 상태입니다.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: AppColors.textSecondary,
@@ -291,9 +356,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
               ),
             ),
           ],
-
           const SizedBox(height: 32),
-
           ElevatedButton(
             onPressed: isDisabled || isLoading ? null : handleSubmit,
             style: ElevatedButton.styleFrom(
@@ -308,7 +371,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
               ),
             ),
             child: Text(
-              isLoading ? '요약 생성 중...' : 'AI 요약 시작하기',
+              isLoading ? 'AI가 분석 중...' : 'AI 요약 시작하기',
               style: const TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 18,

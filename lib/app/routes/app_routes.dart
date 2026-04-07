@@ -4,16 +4,17 @@ import '../pages/add_link_page.dart';
 import '../pages/archive_page.dart';
 import '../pages/category_edit_page.dart';
 import '../pages/category_manage_page.dart';
+import '../pages/collection_page.dart';
 import '../pages/home_page.dart';
-import '../pages/mine_page.dart';
 import '../pages/my_page.dart';
 import '../pages/post_detail_page.dart';
+import '../pages/trash_page.dart';
 import '../pages/unread_page.dart';
+import '../pages/pinned_page.dart';
 
 class AppRoutes {
   static const String home = '/';
   static const String archive = '/archive';
-  static const String mine = '/mine';
   static const String add = '/add';
   static const String my = '/my';
   static const String categoryEdit = '/category-edit';
@@ -21,6 +22,9 @@ class AppRoutes {
   static const String unread = '/unread';
   static const String post = '/post';
   static const String accountSettings = '/account-settings';
+  static const String trash = '/trash';
+  static const String collection = '/collection';
+  static const pinned = '/pinned';
 
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -29,9 +33,6 @@ class AppRoutes {
 
       case archive:
         return MaterialPageRoute(builder: (_) => const ArchivePage());
-
-      case mine:
-        return MaterialPageRoute(builder: (_) => const MinePage());
 
       case add:
         return MaterialPageRoute(builder: (_) => const AddLinkPage());
@@ -48,6 +49,9 @@ class AppRoutes {
       case unread:
         return MaterialPageRoute(builder: (_) => const UnreadPage());
 
+      case trash:
+        return MaterialPageRoute(builder: (_) => const TrashPage());
+
       case post:
         final postId = settings.arguments as String?;
         return MaterialPageRoute(
@@ -58,6 +62,17 @@ class AppRoutes {
         return MaterialPageRoute(
           builder: (_) => const AccountSettingsPage(),
         );
+
+      case collection:
+        return MaterialPageRoute(
+          builder: (_) => const CollectionPage(),
+        );
+
+      case AppRoutes.pinned:
+        return MaterialPageRoute(
+          builder: (_) => const PinnedPage(),
+        );
+        
 
       default:
         return MaterialPageRoute(

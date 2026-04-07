@@ -1,12 +1,9 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import '../data/mock_posts.dart';
-import '../models/post.dart';
-import '../models/post_status.dart';
 import '../routes/app_routes.dart';
+import '../services/firestore_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radii.dart';
-import 'post_card.dart';
 
 class HomeView extends StatefulWidget {
   final String searchQuery;
@@ -21,61 +18,123 @@ class HomeView extends StatefulWidget {
 }
 
 class _HomeViewState extends State<HomeView> {
-  List<Post> randomPosts = [];
-  final Map<int, PostStatus> postStatuses = {};
-  final Map<int, bool> pinnedPosts = {};
-  final Set<int> hiddenToday = {};
+  final FirestoreService _firestoreService = FirestoreService();
+
+  List<Map<String, dynamic>> posts = [];
+  List<Map<String, dynamic>> randomPosts = [];
+  final Set<String> hiddenToday = {};
+
+  bool isLoading = true;
+  String sortOrder = 'random';
 
   @override
   void initState() {
     super.initState();
+    loadPosts();
+  }
+
+  Future<void> loadPosts() async {
+    final data = await _firestoreService.getPosts();
+
+    if (!mounted) return;
+
+    setState(() {
+      posts = data.where((post) => (post['isDeleted'] ?? false) == false).toList();
+      isLoading = false;
+    });
+
     refreshRandomPosts();
   }
 
-  void refreshRandomPosts() {
-    final availablePosts =
-        homePosts.where((post) => !hiddenToday.contains(post.id)).toList();
+  Future<void> togglePinnedStatus(String id, bool currentValue) async {
+    await _firestoreService.updatePinnedStatus(id, !currentValue);
+    await loadPosts();
 
-    final shuffled = [...availablePosts];
-    shuffled.shuffle(Random());
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          currentValue ? '고정을 해제했습니다.' : '홈에 고정했습니다.',
+        ),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> toggleFavoriteStatus(String id, bool currentValue) async {
+    await _firestoreService.updateFavoriteStatus(id, !currentValue);
+    await loadPosts();
+  }
+
+  Future<void> toggleReadStatus(String id, bool currentValue) async {
+    await _firestoreService.updateReadStatus(id, !currentValue);
+    await loadPosts();
+  }
+
+  bool matchesSearch(Map<String, dynamic> post, String query) {
+    if (query.trim().isEmpty) return true;
+
+    final q = query.toLowerCase().trim();
+
+    final title = (post['title'] ?? '').toString().toLowerCase();
+    final summary = (post['summary'] ?? '').toString().toLowerCase();
+    final url = (post['url'] ?? '').toString().toLowerCase();
+    final category = (post['category'] ?? '').toString().toLowerCase();
+    final memo = (post['memo'] ?? '').toString().toLowerCase();
+
+    final tags = (post['tags'] is List)
+        ? (post['tags'] as List)
+            .map((e) => e.toString().toLowerCase())
+            .join(' ')
+        : getTags(post).join(' ').toLowerCase();
+
+    return title.contains(q) ||
+        summary.contains(q) ||
+        url.contains(q) ||
+        category.contains(q) ||
+        memo.contains(q) ||
+        tags.contains(q);
+  }
+
+  void refreshRandomPosts() {
+    final availablePosts = posts.where((post) {
+      final id = (post['id'] ?? '').toString();
+      final bool isDeleted = post['isDeleted'] ?? false;
+
+      if (isDeleted) return false;
+      if (hiddenToday.contains(id)) return false;
+      if (!matchesSearch(post, widget.searchQuery)) return false;
+
+      return true;
+    }).toList();
+
+    final selected = [...availablePosts];
+
+    if (sortOrder == 'recent') {
+      selected.sort((a, b) => getCreatedAt(b).compareTo(getCreatedAt(a)));
+    } else if (sortOrder == 'oldest') {
+      selected.sort((a, b) => getCreatedAt(a).compareTo(getCreatedAt(b)));
+    } else {
+      selected.shuffle(Random());
+    }
+
+    if (!mounted) return;
 
     setState(() {
-      randomPosts = shuffled.take(2).toList();
+      randomPosts = selected.take(2).toList();
     });
   }
 
   void sortRandomPosts(String type) {
-    final availablePosts =
-        homePosts.where((post) => !hiddenToday.contains(post.id)).toList();
-
-    List<Post> sorted = [...availablePosts];
-
-    if (type == 'recent') {
-      sorted.sort((a, b) => b.date.compareTo(a.date));
-    } else if (type == 'oldest') {
-      sorted.sort((a, b) => a.date.compareTo(b.date));
-    } else {
-      sorted.shuffle(Random());
-    }
-
     setState(() {
-      randomPosts = sorted.take(2).toList();
+      sortOrder = type;
     });
+    refreshRandomPosts();
   }
 
-  void handleStatusChange(int postId, PostStatus newStatus) {
-    setState(() {
-      postStatuses[postId] = newStatus;
-    });
-  }
-
-  void handlePinChange(int postId, bool isPinned) {
-    setState(() {
-      pinnedPosts[postId] = isPinned;
-    });
-  }
-
-  void handleHideToday(int postId) {
+  void handleHideToday(String postId) {
     setState(() {
       hiddenToday.add(postId);
     });
@@ -83,37 +142,391 @@ class _HomeViewState extends State<HomeView> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    List<Post> posts = homePosts.map((post) {
-      return post.copyWith(
-        status: postStatuses[post.id] ?? post.status,
-        isPinned: pinnedPosts[post.id] ?? post.isPinned,
-      );
-    }).toList();
+  void didUpdateWidget(covariant HomeView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.searchQuery != widget.searchQuery) {
+      refreshRandomPosts();
+    }
+  }
 
-    if (widget.searchQuery.isNotEmpty) {
-      final q = widget.searchQuery.toLowerCase();
-      posts = posts.where((p) {
-        return p.title.toLowerCase().contains(q) ||
-            (p.source?.toLowerCase().contains(q) ?? false) ||
-            p.tags.any((tag) => tag.toLowerCase().contains(q)) ||
-            p.keyPoints.any((pt) => pt.toLowerCase().contains(q));
-      }).toList();
+  DateTime getCreatedAt(Map<String, dynamic> post) {
+    final createdAt = post['createdAt'];
+
+    if (createdAt == null) {
+      return DateTime.fromMillisecondsSinceEpoch(0);
     }
 
-    posts = posts
-        .where((p) => p.status == PostStatus.active || p.status == PostStatus.done)
-        .toList();
+    if (createdAt is DateTime) {
+      return createdAt;
+    }
 
-    final pinnedPostsList = posts.where((p) => p.isPinned).toList();
+    try {
+      return createdAt.toDate();
+    } catch (_) {
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+  }
 
-    final unreadPosts = homePosts.where((p) {
-      final s = postStatuses[p.id] ?? p.status;
-      return s != PostStatus.done &&
-          s != PostStatus.archived &&
-          s != PostStatus.mine &&
-          s != PostStatus.deleted;
+  String formatDate(dynamic createdAt) {
+    try {
+      if (createdAt == null) return '날짜 없음';
+
+      if (createdAt is DateTime) {
+        return '${createdAt.year}.${createdAt.month.toString().padLeft(2, '0')}.${createdAt.day.toString().padLeft(2, '0')}';
+      }
+
+      if (createdAt.toString().contains('Timestamp')) {
+        final date = createdAt.toDate();
+        return '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}';
+      }
+
+      return createdAt.toString();
+    } catch (_) {
+      return '날짜 없음';
+    }
+  }
+
+  String getDisplayTitle(Map<String, dynamic> post) {
+    final title = (post['title'] ?? '').toString().trim();
+    final url = (post['url'] ?? '').toString().trim();
+
+    if (title.isNotEmpty) return title;
+    if (url.isNotEmpty) return url;
+    return '제목 없음';
+  }
+
+  List<String> getSummaryLines(Map<String, dynamic> post) {
+    final summary = (post['summary'] ?? '').toString().trim();
+    final url = (post['url'] ?? '').toString().trim();
+
+    if (summary.isNotEmpty) {
+      return summary
+          .split('\n')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .take(3)
+          .toList();
+    }
+
+    if (url.isNotEmpty) {
+      return [url];
+    }
+
+    return ['요약 정보가 없습니다.'];
+  }
+
+  List<String> getTags(Map<String, dynamic> post) {
+    final rawTags = post['tags'];
+
+    if (rawTags is List) {
+      final parsed = rawTags
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .map((e) => e.startsWith('#') ? e : '#$e')
+          .take(3)
+          .toList();
+
+      if (parsed.isNotEmpty) return parsed;
+    }
+
+    final category = (post['category'] ?? '기타').toString();
+    switch (category) {
+      case '자기계발':
+        return ['#기록', '#습관'];
+      case '운동':
+        return ['#헬스', '#기록'];
+      case '장소':
+        return ['#장소', '#저장'];
+      case '쇼핑':
+        return ['#쇼핑', '#구매'];
+      default:
+        return ['#링크', '#저장'];
+    }
+  }
+
+  Color getCategoryChipColor(String category) {
+    switch (category) {
+      case '자기계발':
+        return const Color(0xFFF2E6E1);
+      case '운동':
+        return const Color(0xFFDDEBE5);
+      case '장소':
+        return const Color(0xFFE8E4F4);
+      case '쇼핑':
+        return const Color(0xFFF7E5D9);
+      default:
+        return const Color(0xFFF1F1F1);
+    }
+  }
+
+  Widget buildPostCard(
+    Map<String, dynamic> post, {
+    bool showReadIcon = true,
+    bool allowHideToday = false,
+  }) {
+    final String id = (post['id'] ?? '').toString();
+    final bool isRead = post['isRead'] ?? false;
+    final bool isFavorite = post['isFavorite'] ?? false;
+    final bool isPinned = post['isPinned'] ?? false;
+    final String category = (post['category'] ?? '기타').toString();
+    final String dateText = formatDate(post['createdAt']);
+    final String title = getDisplayTitle(post);
+    final List<String> summaryLines = getSummaryLines(post);
+    final List<String> tags = getTags(post);
+
+    final Color cardBackgroundColor =
+        isRead ? const Color(0xFFF6F6F6) : AppColors.surface;
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.pushNamed(
+          context,
+          AppRoutes.post,
+          arguments: id,
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: cardBackgroundColor,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14000000),
+              blurRadius: 16,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: getCategoryChipColor(category),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    category,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.charcoal,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  dateText,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textDisabled,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (isPinned) ...[
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.push_pin,
+                    size: 18,
+                    color: AppColors.peachDust,
+                  ),
+                ],
+                if (showReadIcon) ...[
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () async {
+                      await toggleReadStatus(id, isRead);
+                    },
+                    child: Icon(
+                      isRead
+                          ? Icons.check_circle
+                          : Icons.check_circle_outline,
+                      size: 20,
+                      color: isRead
+                          ? AppColors.success
+                          : AppColors.textDisabled,
+                    ),
+                  ),
+                ],
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () async {
+                    await toggleFavoriteStatus(id, isFavorite);
+                  },
+                  child: Icon(
+                    isFavorite ? Icons.star : Icons.star_border,
+                    size: 20,
+                    color: isFavorite ? Colors.amber : AppColors.textDisabled,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                PopupMenuButton<String>(
+                  icon: const Icon(
+                    Icons.more_horiz,
+                    color: AppColors.textDisabled,
+                  ),
+                  onSelected: (value) async {
+                    if (value == 'pin') {
+                      await togglePinnedStatus(id, isPinned);
+                    } else if (value == 'hide' && allowHideToday) {
+                      handleHideToday(id);
+                    } else if (value == 'refresh' && allowHideToday) {
+                      refreshRandomPosts();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'pin',
+                      child: Text(isPinned ? '고정 해제' : '홈에 고정'),
+                    ),
+                    if (allowHideToday)
+                      const PopupMenuItem(
+                        value: 'hide',
+                        child: Text('오늘은 그만 보기'),
+                      ),
+                    if (allowHideToday)
+                      const PopupMenuItem(
+                        value: 'refresh',
+                        child: Text('다른 카드 추천받기'),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+                height: 1.4,
+                color: Colors.black,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ...summaryLines.map(
+              (line) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '• ',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    Expanded(
+                      child: Text(
+                        line,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          height: 1.6,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.charcoal,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Divider(color: AppColors.divider),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: tags.map((tag) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF3F3F3),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Text(
+                          tag,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Row(
+                  children: [
+                    Text(
+                      '원본 보기',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Icon(
+                      Icons.arrow_forward,
+                      size: 16,
+                      color: AppColors.textSecondary,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Map<String, dynamic>> visiblePosts = posts.where((post) {
+      return matchesSearch(post, widget.searchQuery);
     }).toList();
+
+    final pinnedPostsList = visiblePosts
+        .where((post) => (post['isPinned'] ?? false) == true)
+        .toList()
+      ..sort((a, b) => getCreatedAt(b).compareTo(getCreatedAt(a)));
+
+    final pinnedPreview = pinnedPostsList.take(2).toList();
+
+    final unreadPosts = visiblePosts.where((post) {
+      return (post['isRead'] ?? false) == false &&
+          (post['isCollected'] ?? false) == false;
+    }).toList();
+
+    final visibleRandomPosts = randomPosts.where((post) {
+      final id = (post['id'] ?? '').toString();
+      if (hiddenToday.contains(id)) return false;
+      return matchesSearch(post, widget.searchQuery);
+    }).toList();
+
+    if (isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
@@ -166,32 +579,39 @@ class _HomeViewState extends State<HomeView> {
           ),
         if (pinnedPostsList.isNotEmpty) ...[
           Row(
-            children: const [
-              Icon(
-                Icons.push_pin_outlined,
-                color: AppColors.peachDust,
-                size: 20,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: const [
+                  Icon(
+                    Icons.push_pin_outlined,
+                    color: AppColors.peachDust,
+                    size: 20,
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    '내가 고정한 카드',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
               ),
-              SizedBox(width: 8),
-              Text(
-                '내가 고정한 카드',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 18,
+              if (pinnedPostsList.length > 2)
+                TextButton(
+                  onPressed: () {
+                    Navigator.pushNamed(context, AppRoutes.pinned);
+                  },
+                  child: const Text('전체 보기'),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 16),
-          ...pinnedPostsList.map(
+          ...pinnedPreview.map(
             (post) => Padding(
               padding: const EdgeInsets.only(bottom: 16),
-              child: PostCard(
-                post: post,
-                onStatusChange: handleStatusChange,
-                onPinChange: handlePinChange,
-                isInFixedZone: true,
-              ),
+              child: buildPostCard(post),
             ),
           ),
           const SizedBox(height: 8),
@@ -223,7 +643,7 @@ class _HomeViewState extends State<HomeView> {
                 } else if (value == 'oldest') {
                   sortRandomPosts('oldest');
                 } else {
-                  refreshRandomPosts();
+                  sortRandomPosts('random');
                 }
               },
               itemBuilder: (context) => const [
@@ -236,21 +656,15 @@ class _HomeViewState extends State<HomeView> {
           ],
         ),
         const SizedBox(height: 16),
-        ...randomPosts
-            .where((p) => !hiddenToday.contains(p.id))
-            .map(
-              (post) => Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: PostCard(
-                  post: post,
-                  onStatusChange: handleStatusChange,
-                  onPinChange: handlePinChange,
-                  isInRandomZone: true,
-                  onHideToday: handleHideToday,
-                  onRefreshRandom: refreshRandomPosts,
-                ),
-              ),
+        ...visibleRandomPosts.map(
+          (post) => Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: buildPostCard(
+              post,
+              allowHideToday: true,
             ),
+          ),
+        ),
       ],
     );
   }
