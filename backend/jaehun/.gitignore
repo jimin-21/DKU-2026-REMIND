@@ -1,0 +1,12 @@
+# 가상 환경 (용량이 커서 올리지 않음)
+venv/
+
+# Firebase 마스터키 (보안상 절대 금지) 
+resee-app-firebase-adminsdk-fbsvc-7110fd24e7.json
+
+# 환경 변수 파일 (API 키 포함) [cite: 168-169]
+.env
+
+# 파이썬 캐시 파일
+__pycache__/
+*.pyc

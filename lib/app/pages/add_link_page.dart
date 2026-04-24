@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '../routes/app_routes.dart';
+import 'dart:typed_data';
+import 'package:image_picker/image_picker.dart';
+import '../pages/archive_page.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radii.dart';
 import '../services/analysis_service.dart';
@@ -18,6 +20,8 @@ class _AddLinkPageState extends State<AddLinkPage> {
   bool isLoading = false;
   bool isLinkMode = true;
   String? uploadedImageName;
+  Uint8List? selectedImageBytes;
+  String? selectedImageFileName;
 
   @override
   void dispose() {
@@ -28,9 +32,9 @@ class _AddLinkPageState extends State<AddLinkPage> {
   Future<void> handleSubmit() async {
     final isDisabled =
         (isLinkMode && urlController.text.trim().isEmpty) ||
-        (!isLinkMode && uploadedImageName == null);
+        (!isLinkMode && selectedImageBytes == null);
 
-    if (isDisabled) return;
+    if (isDisabled || isLoading) return;
 
     setState(() {
       isLoading = true;
@@ -43,11 +47,17 @@ class _AddLinkPageState extends State<AddLinkPage> {
         final success = await _analysisService.analyzeUrl(inputUrl);
 
         if (!success) {
-          throw Exception('분석 및 저장 실패');
+          throw Exception('AI 분석 실패');
         }
       } else {
-        // 이미지 업로드 분석은 나중에 실제 파일 선택 + /analyze/image 연결
-        // 지금은 UI만 준비된 상태
+        final success = await _analysisService.analyzeImageBytes(
+          selectedImageBytes!,
+          selectedImageFileName ?? 'image.jpg',
+        );
+
+        if (!success) {
+          throw Exception('이미지 분석 실패');
+        }
       }
 
       if (!mounted) return;
@@ -59,17 +69,22 @@ class _AddLinkPageState extends State<AddLinkPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('저장되었습니다.'),
-          duration: Duration(seconds: 2),
+          duration: Duration(seconds: 1),
           behavior: SnackBarBehavior.floating,
         ),
       );
 
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        AppRoutes.archive,
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const ArchivePage(),
+        ),
         (route) => false,
       );
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
 
       setState(() {
@@ -77,20 +92,35 @@ class _AddLinkPageState extends State<AddLinkPage> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('저장 중 오류가 발생했습니다.'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text('저장 중 오류가 발생했습니다. $e'),
+          duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
         ),
       );
     }
   }
 
+  Future<void> pickImage() async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: ImageSource.gallery);
+
+    if (image == null) return;
+
+    final bytes = await image.readAsBytes();
+
+    setState(() {
+      selectedImageBytes = bytes;
+      selectedImageFileName = image.name;
+      uploadedImageName = image.name;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDisabled =
         (isLinkMode && urlController.text.trim().isEmpty) ||
-        (!isLinkMode && uploadedImageName == null);
+        (!isLinkMode && selectedImageBytes == null);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -159,11 +189,13 @@ class _AddLinkPageState extends State<AddLinkPage> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      isLinkMode = true;
-                    });
-                  },
+                  onPressed: isLoading
+                      ? null
+                      : () {
+                          setState(() {
+                            isLinkMode = true;
+                          });
+                        },
                   icon: const Icon(Icons.link),
                   label: const Text('링크 입력'),
                   style: OutlinedButton.styleFrom(
@@ -175,21 +207,19 @@ class _AddLinkPageState extends State<AddLinkPage> {
                       borderRadius: BorderRadius.circular(18),
                     ),
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    textStyle: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      isLinkMode = false;
-                    });
-                  },
+                  onPressed: isLoading
+                      ? null
+                      : () {
+                          setState(() {
+                            isLinkMode = false;
+                          });
+                        },
                   icon: const Icon(Icons.image_outlined),
                   label: const Text('사진 업로드'),
                   style: OutlinedButton.styleFrom(
@@ -201,10 +231,6 @@ class _AddLinkPageState extends State<AddLinkPage> {
                       borderRadius: BorderRadius.circular(18),
                     ),
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    textStyle: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                    ),
                   ),
                 ),
               ),
@@ -223,6 +249,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
             const SizedBox(height: 12),
             TextField(
               controller: urlController,
+              enabled: !isLoading,
               onChanged: (_) {
                 setState(() {});
               },
@@ -230,43 +257,12 @@ class _AddLinkPageState extends State<AddLinkPage> {
               maxLines: 3,
               decoration: InputDecoration(
                 hintText: 'https://www.example.com/post/...',
-                hintStyle: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 15,
-                ),
                 filled: true,
                 fillColor: AppColors.surface,
                 contentPadding: const EdgeInsets.all(20),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(20),
-                  borderSide: const BorderSide(
-                    color: Color(0xFF6E56CF),
-                    width: 2,
-                  ),
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: const BorderSide(
-                    color: Color(0xFF6E56CF),
-                    width: 2,
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: const BorderSide(
-                    color: Color(0xFF6E56CF),
-                    width: 2,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              '카테고리, 제목, 요약, 태그는 자동으로 분석됩니다.',
-              style: TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 13,
-                height: 1.6,
               ),
             ),
           ] else ...[
@@ -299,7 +295,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '이미지 분석 API 연결 전입니다.\n지금은 UI만 준비된 상태입니다.',
+                    '이미지를 분석해 제목, 요약, 태그, 카테고리를 자동으로 저장합니다.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: AppColors.textSecondary,
@@ -309,18 +305,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
                   ),
                   const SizedBox(height: 16),
                   OutlinedButton(
-                    onPressed: () {
-                      setState(() {
-                        uploadedImageName = 'sample_image.png';
-                      });
-                    },
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF6E56CF),
-                      side: const BorderSide(color: Color(0xFF6E56CF)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
+                    onPressed: isLoading ? null : pickImage,
                     child: const Text('파일 선택'),
                   ),
                   if (uploadedImageName != null) ...[

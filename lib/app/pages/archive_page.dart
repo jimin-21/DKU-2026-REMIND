@@ -21,9 +21,12 @@ class _ArchivePageState extends State<ArchivePage> {
   String sortOrder = 'recent';
 
   final FirestoreService _firestoreService = FirestoreService();
+
   List<Map<String, dynamic>> posts = [];
   List<String> mainCategoryNames = [];
+
   bool isLoading = true;
+  bool _hasLoadedOnce = false;
 
   @override
   void initState() {
@@ -31,7 +34,20 @@ class _ArchivePageState extends State<ArchivePage> {
     loadPosts();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (_hasLoadedOnce) {
+      loadPosts();
+    }
+  }
+
   Future<void> loadPosts() async {
+    setState(() {
+      isLoading = true;
+    });
+
     final data = await _firestoreService.getPosts();
     final categories = await _firestoreService.getCategories();
 
@@ -47,6 +63,7 @@ class _ArchivePageState extends State<ArchivePage> {
       posts = data;
       mainCategoryNames = mains;
       isLoading = false;
+      _hasLoadedOnce = true;
     });
   }
 
@@ -137,7 +154,7 @@ class _ArchivePageState extends State<ArchivePage> {
     });
 
     if (tab == 0) {
-      Navigator.pushNamed(context, AppRoutes.archive);
+      loadPosts();
     } else if (tab == 1) {
       Navigator.pushNamed(context, AppRoutes.home);
     } else if (tab == 2) {
@@ -238,6 +255,7 @@ class _ArchivePageState extends State<ArchivePage> {
     }
 
     final category = (post['category'] ?? '기타').toString();
+
     switch (category) {
       case '자기계발':
         return ['#기록', '#습관'];
@@ -465,7 +483,8 @@ class _ArchivePageState extends State<ArchivePage> {
                                 ),
                                 padding: const EdgeInsets.all(20),
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
                                   children: [
                                     Row(
                                       children: [
