@@ -39,6 +39,10 @@ class AnalysisService {
 
       final request = http.MultipartRequest('POST', uri);
 
+      request.headers.addAll({
+        'accept': 'application/json',
+      });
+
       request.files.add(
         http.MultipartFile.fromBytes(
           'file',

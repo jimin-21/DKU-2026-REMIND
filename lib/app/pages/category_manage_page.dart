@@ -40,6 +40,8 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
   }
 
   Future<void> loadCategories() async {
+    await _firestoreService.seedDefaultCategoriesIfNeeded();
+
     final data = await _firestoreService.getCategories();
 
     if (!mounted) return;
@@ -48,7 +50,11 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
       ..sort((a, b) => ((a['sortOrder'] ?? 0) as int)
           .compareTo((b['sortOrder'] ?? 0) as int));
 
-    final etcs = data.where((e) => (e['isMain'] ?? false) == false).toList()
+    final etcs = data
+        .where((e) =>
+            (e['isMain'] ?? false) == false &&
+            ((e['count'] ?? 0) as int) > 0)
+        .toList()
       ..sort((a, b) => ((a['sortOrder'] ?? 0) as int)
           .compareTo((b['sortOrder'] ?? 0) as int));
 
@@ -402,8 +408,6 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
                   renamed: renamed,
                 ),
               ),
-              _buildCountChip(count),
-              const SizedBox(width: 18),
               InkWell(
                 onTap: () => _editMainCategory(index),
                 child: const Icon(
@@ -457,8 +461,6 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
                   renamed: renamed,
                 ),
               ),
-              _buildCountChip(count),
-              const SizedBox(width: 18),
               InkWell(
                 onTap: () => _promoteToMain(index),
                 child: const Icon(
