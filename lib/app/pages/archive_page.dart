@@ -57,6 +57,7 @@ class _ArchivePageState extends State<ArchivePage> {
         .where((e) => (e['isMain'] ?? false) == true)
         .map((e) => (e['name'] ?? '').toString().trim())
         .where((name) => name.isNotEmpty)
+        .toSet()
         .toList();
 
     setState(() {
@@ -328,6 +329,11 @@ class _ArchivePageState extends State<ArchivePage> {
       final selectedCategory = getSelectedMainCategoryName();
       if (selectedCategory != null) {
         return category == selectedCategory;
+      }
+
+      if (categoryTab ==
+          AppCategories.fixedTabs.length + mainCategoryNames.length) {
+        return category == '기타';
       }
 
       return true;

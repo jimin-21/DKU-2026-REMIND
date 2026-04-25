@@ -57,71 +57,70 @@ class FirestoreService {
   }
 
   Future<List<Map<String, dynamic>>> getTrashPosts() async {
-    final snapshot = await _db
-        .collection('posts')
-        .orderBy('createdAt', descending: true)
-        .get();
+    final posts = await getPosts();
 
-    return snapshot.docs
-        .map((doc) {
-          return {
-            'id': doc.id,
-            ...doc.data(),
-          };
-        })
-        .where((post) => (post['isDeleted'] ?? false) == true)
-        .toList();
+    return posts.where((post) {
+      return (post['isDeleted'] ?? false) == true;
+    }).toList();
   }
 
   Future<List<Map<String, dynamic>>> getCollectedPosts() async {
-    final snapshot = await _db
-        .collection('posts')
-        .orderBy('createdAt', descending: true)
-        .get();
+    final posts = await getPosts();
 
-    return snapshot.docs
-        .map((doc) {
-          return {
-            'id': doc.id,
-            ...doc.data(),
-          };
-        })
-        .where((post) =>
-            (post['isCollected'] ?? false) == true &&
-            (post['isDeleted'] ?? false) == false)
-        .toList();
+    return posts.where((post) {
+      final bool isCollected = post['isCollected'] ?? false;
+      final bool isDeleted = post['isDeleted'] ?? false;
+
+      return isCollected == true && isDeleted == false;
+    }).toList();
   }
 
   Future<void> updateReadStatus(String id, bool isRead) async {
-    await _db.collection('posts').doc(id).update({'isRead': isRead});
+    await _db.collection('posts').doc(id).update({
+      'isRead': isRead,
+    });
   }
 
   Future<void> updateFavoriteStatus(String id, bool isFavorite) async {
-    await _db.collection('posts').doc(id).update({'isFavorite': isFavorite});
+    await _db.collection('posts').doc(id).update({
+      'isFavorite': isFavorite,
+    });
   }
 
   Future<void> updatePinnedStatus(String id, bool isPinned) async {
-    await _db.collection('posts').doc(id).update({'isPinned': isPinned});
+    await _db.collection('posts').doc(id).update({
+      'isPinned': isPinned,
+    });
   }
 
   Future<void> updateCollectedStatus(String id, bool isCollected) async {
-    await _db.collection('posts').doc(id).update({'isCollected': isCollected});
+    await _db.collection('posts').doc(id).update({
+      'isCollected': isCollected,
+    });
   }
 
   Future<void> updateSummary(String id, String summary) async {
-    await _db.collection('posts').doc(id).update({'summary': summary});
+    await _db.collection('posts').doc(id).update({
+      'summary': summary,
+    });
   }
 
   Future<void> updateMemo(String id, String memo) async {
-    await _db.collection('posts').doc(id).update({'memo': memo});
+    await _db.collection('posts').doc(id).update({
+      'memo': memo,
+    });
   }
 
   Future<void> moveToTrash(String id) async {
-    await _db.collection('posts').doc(id).update({'isDeleted': true});
+    await _db.collection('posts').doc(id).update({
+      'isDeleted': true,
+    });
   }
 
   Future<void> restoreFromTrash(String id) async {
-    await _db.collection('posts').doc(id).update({'isDeleted': false});
+    await _db.collection('posts').doc(id).update({
+      'isDeleted': false,
+    });
   }
 
   Future<void> deletePostPermanently(String id) async {
@@ -139,7 +138,6 @@ class FirestoreService {
       {
         'name': '자기계발',
         'originalName': '자기계발',
-        'count': 0,
         'color': 0xFFC2D6CF,
         'isMain': true,
         'sortOrder': 0,
@@ -147,7 +145,6 @@ class FirestoreService {
       {
         'name': '운동',
         'originalName': '운동',
-        'count': 0,
         'color': 0xFFD8B4FE,
         'isMain': true,
         'sortOrder': 1,
@@ -155,7 +152,6 @@ class FirestoreService {
       {
         'name': '장소',
         'originalName': '장소',
-        'count': 0,
         'color': 0xFFFBBF24,
         'isMain': true,
         'sortOrder': 2,
@@ -163,122 +159,15 @@ class FirestoreService {
       {
         'name': '쇼핑',
         'originalName': '쇼핑',
-        'count': 0,
         'color': 0xFFF87171,
         'isMain': true,
         'sortOrder': 3,
       },
     ];
 
-    for (final item in defaultCategories) {
+    for (final category in defaultCategories) {
       final ref = _db.collection('categories').doc();
-      batch.set(ref, item);
-    }
-
-    await batch.commit();
-  }
-
-  bool _isDefaultMainCategory(String name) {
-    return ['자기계발', '운동', '장소', '쇼핑'].contains(name);
-  }
-
-  int _pickColorByIndex(int index) {
-    const colors = [
-      0xFF9ED0F6,
-      0xFFF2B8B5,
-      0xFFA7E3D3,
-      0xFFD8B4FE,
-      0xFFFBBF24,
-      0xFFF87171,
-      0xFFC2D6CF,
-    ];
-
-    return colors[index % colors.length];
-  }
-
-  Future<void> syncCategoryCounts() async {
-    await seedDefaultCategoriesIfNeeded();
-
-    final categorySnapshot = await _db.collection('categories').get();
-    final postSnapshot = await _db.collection('posts').get();
-
-    final Map<String, int> counts = {};
-
-    for (final doc in postSnapshot.docs) {
-      final data = doc.data();
-
-      final bool isDeleted = data['isDeleted'] ?? false;
-      if (isDeleted) continue;
-
-      final String category = (data['category'] ?? '').toString().trim();
-
-      if (category.isNotEmpty && category != '기타') {
-        counts[category] = (counts[category] ?? 0) + 1;
-      }
-
-      if (category == '기타') {
-        final rawTags = data['tags'];
-
-        if (rawTags is List) {
-          for (final tag in rawTags) {
-            final tagName = tag.toString().replaceAll('#', '').trim();
-
-            if (tagName.isEmpty) continue;
-            if (_isDefaultMainCategory(tagName)) continue;
-            if (tagName == '기타') continue;
-            if (tagName.length > 12) continue;
-
-            counts[tagName] = (counts[tagName] ?? 0) + 1;
-          }
-        }
-      }
-    }
-
-    final existingNames = categorySnapshot.docs
-        .map((doc) => (doc.data()['name'] ?? '').toString().trim())
-        .where((name) => name.isNotEmpty)
-        .toSet();
-
-    final batch = _db.batch();
-
-    int extraIndex = 0;
-
-    for (final entry in counts.entries) {
-      final name = entry.key;
-      final count = entry.value;
-
-      if (count <= 0) continue;
-      if (existingNames.contains(name)) continue;
-      if (_isDefaultMainCategory(name)) continue;
-
-      final ref = _db.collection('categories').doc();
-
-      batch.set(ref, {
-        'name': name,
-        'originalName': name,
-        'count': count,
-        'color': _pickColorByIndex(extraIndex),
-        'isMain': false,
-        'sortOrder': 100 + extraIndex,
-      });
-
-      existingNames.add(name);
-      extraIndex++;
-    }
-
-    for (final doc in categorySnapshot.docs) {
-      final data = doc.data();
-
-      final String name = (data['name'] ?? '').toString().trim();
-      final String originalName = (data['originalName'] ?? '').toString().trim();
-
-      final int count =
-          (counts[name] ?? 0) +
-          (name == originalName ? 0 : (counts[originalName] ?? 0));
-
-      batch.update(doc.reference, {
-        'count': count,
-      });
+      batch.set(ref, category);
     }
 
     await batch.commit();
@@ -286,7 +175,6 @@ class FirestoreService {
 
   Future<List<Map<String, dynamic>>> getCategories() async {
     await seedDefaultCategoriesIfNeeded();
-    await syncCategoryCounts();
 
     final snapshot =
         await _db.collection('categories').orderBy('sortOrder').get();
@@ -319,8 +207,8 @@ class FirestoreService {
     final categories = await getCategories();
 
     return categories
-        .where((e) => (e['isMain'] ?? false) == true)
-        .map((e) => (e['name'] ?? '').toString().trim())
+        .where((category) => (category['isMain'] ?? false) == true)
+        .map((category) => (category['name'] ?? '').toString().trim())
         .where((name) => name.isNotEmpty)
         .toList();
   }
@@ -331,53 +219,23 @@ class FirestoreService {
     int? color,
   }) async {
     final snapshot = await _db.collection('categories').get();
-    final sortOrder = snapshot.docs.length;
 
     await _db.collection('categories').add({
       'name': name,
       'originalName': name,
-      'count': 0,
       'color': color ?? 0xFF9ED0F6,
       'isMain': isMain,
-      'sortOrder': sortOrder,
+      'sortOrder': snapshot.docs.length,
     });
-
-    await syncCategoryCounts();
   }
 
   Future<void> updateCategoryName({
     required String id,
     required String name,
   }) async {
-    final categoryDoc = await _db.collection('categories').doc(id).get();
-    if (!categoryDoc.exists) return;
-
-    final data = categoryDoc.data()!;
-    final String oldName = (data['name'] ?? '').toString().trim();
-    final String originalName = (data['originalName'] ?? '').toString().trim();
-
-    if (oldName.isEmpty) return;
-
     await _db.collection('categories').doc(id).update({
       'name': name,
     });
-
-    final postsSnapshot = await _db.collection('posts').get();
-    final batch = _db.batch();
-
-    for (final doc in postsSnapshot.docs) {
-      final postData = doc.data();
-      final String postCategory = (postData['category'] ?? '').toString().trim();
-
-      if (postCategory == oldName || postCategory == originalName) {
-        batch.update(doc.reference, {
-          'category': name,
-        });
-      }
-    }
-
-    await batch.commit();
-    await syncCategoryCounts();
   }
 
   Future<void> deleteCategory(String id) async {
@@ -406,11 +264,11 @@ class FirestoreService {
     final batch = _db.batch();
 
     for (int i = 0; i < categories.length; i++) {
-      final item = categories[i];
-      final id = (item['id'] ?? '').toString();
+      final id = (categories[i]['id'] ?? '').toString();
       if (id.isEmpty) continue;
 
       final ref = _db.collection('categories').doc(id);
+
       batch.update(ref, {
         'sortOrder': i,
       });
@@ -427,8 +285,6 @@ class FirestoreService {
       'isMain': true,
       'sortOrder': sortOrder,
     });
-
-    await syncCategoryCounts();
   }
 
   Future<void> demoteCategoryToEtc({
@@ -439,7 +295,5 @@ class FirestoreService {
       'isMain': false,
       'sortOrder': sortOrder,
     });
-
-    await syncCategoryCounts();
   }
 }

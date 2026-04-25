@@ -20,7 +20,11 @@ class CategoryTabs extends StatefulWidget {
 class _CategoryTabsState extends State<CategoryTabs> {
   final FirestoreService _firestoreService = FirestoreService();
 
-  List<String> tabLabels = [...AppCategories.fixedTabs];
+  List<String> tabLabels = [
+    ...AppCategories.fixedTabs,
+    AppCategories.etc,
+  ];
+
   bool isLoading = true;
 
   @override
@@ -38,12 +42,14 @@ class _CategoryTabsState extends State<CategoryTabs> {
         .where((e) => (e['isMain'] ?? false) == true)
         .map((e) => (e['name'] ?? '').toString().trim())
         .where((name) => name.isNotEmpty)
+        .toSet()
         .toList();
 
     setState(() {
       tabLabels = [
         ...AppCategories.fixedTabs,
         ...mainCategoryNames,
+        AppCategories.etc,
       ];
       isLoading = false;
     });
@@ -82,9 +88,7 @@ class _CategoryTabsState extends State<CategoryTabs> {
                       Icon(
                         Icons.star,
                         size: 16,
-                        color: isSelected
-                            ? AppColors.textSecondary
-                            : AppColors.textSecondary,
+                        color: AppColors.textSecondary,
                       ),
                       const SizedBox(width: 4),
                       Text(
