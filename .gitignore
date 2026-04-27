@@ -1,12 +1,53 @@
+# --- [Python 백엔드 설정] ---
 # 가상 환경 (용량이 커서 올리지 않음)
 venv/
+backend/jaehun/venv/
 
-# Firebase 마스터키 (보안상 절대 금지) 
+# Firebase 마스터키 (보안상 절대 금지!)
 resee-app-firebase-adminsdk-fbsvc-7110fd24e7.json
+backend/jaehun/resee-app-firebase-adminsdk-fbsvc-7110fd24e7.json
 
-# 환경 변수 파일 (API 키 포함) [cite: 168-169]
+# 환경 변수 파일 (API 키 포함)
 .env
+backend/jaehun/.env
 
 # 파이썬 캐시 파일
 __pycache__/
 *.pyc
+
+# --- [지민님의 Flutter/IDE 설정] ---
+# Miscellaneous
+*.class
+*.log
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ/Android Studio related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Android/iOS Build artifacts
+/android/app/debug
+/android/app/profile
+/android/app/release
+app.*.symbols
+app.*.map.json
