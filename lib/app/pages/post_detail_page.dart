@@ -65,6 +65,16 @@ class _PostDetailPageState extends State<PostDetailPage> {
     });
   }
 
+  Future<void> toggleReadStatus() async {
+    if (post == null) return;
+
+    final id = post!['id'].toString();
+    final currentValue = post!['isRead'] ?? false;
+
+    await _firestoreService.updateReadStatus(id, !currentValue);
+    await loadPost();
+  }
+
   Future<void> toggleFavorite() async {
     if (post == null) return;
 
@@ -87,6 +97,24 @@ class _PostDetailPageState extends State<PostDetailPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('컬렉션으로 이동했습니다.'),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> cancelMastered() async {
+    if (post == null) return;
+
+    final id = post!['id'].toString();
+    await _firestoreService.updateCollectedStatus(id, false);
+    await loadPost();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('마스터를 취소했습니다.'),
         duration: Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
       ),
@@ -159,20 +187,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
-  DateTime? parseCreatedAt(dynamic createdAt) {
-    try {
-      if (createdAt == null) return null;
-
-      if (createdAt is DateTime) {
-        return createdAt;
-      }
-
-      return createdAt.toDate();
-    } catch (_) {
-      return null;
-    }
-  }
-
   String formatDate(dynamic createdAt) {
     try {
       if (createdAt == null) return '날짜 없음';
@@ -190,22 +204,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
     } catch (_) {
       return '날짜 없음';
     }
-  }
-
-  String getMasterBadgeText() {
-    if (post == null) return '🏆 마스터 완료';
-
-    final createdAt = parseCreatedAt(post!['createdAt']);
-
-    if (createdAt == null) {
-      return '🏆 마스터 완료';
-    }
-
-    final completedAt = createdAt.add(const Duration(days: 5));
-    final completedText =
-        '${completedAt.year}.${completedAt.month.toString().padLeft(2, '0')}.${completedAt.day.toString().padLeft(2, '0')}';
-
-    return '🏆 $completedText 마스터 완료';
   }
 
   Color getCategoryChipColor(String category) {
@@ -238,21 +236,16 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final bool isCollected = post?['isCollected'] ?? false;
 
     if (isCollected) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.butterYellow,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: const Color(0xFFE0D38A),
-          ),
-        ),
-        child: Text(
-          getMasterBadgeText(),
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: AppColors.charcoal,
+      return OutlinedButton.icon(
+        onPressed: cancelMastered,
+        icon: const Icon(Icons.check_circle, size: 18),
+        label: const Text('마스터 완료'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.textSecondary,
+          side: const BorderSide(color: AppColors.divider),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
           ),
         ),
       );
@@ -261,15 +254,12 @@ class _PostDetailPageState extends State<PostDetailPage> {
     return ElevatedButton(
       onPressed: markAsMastered,
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.butterYellow,
+        backgroundColor: const Color(0xFFF3F4F4),
         foregroundColor: AppColors.charcoal,
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
-          side: const BorderSide(
-            color: Color(0xFFE0D38A),
-          ),
         ),
       ),
       child: const Text(
@@ -302,6 +292,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
       );
     }
 
+    final bool isRead = post?['isRead'] ?? false;
     final category = (post!['category'] ?? '기타').toString();
     final title = ((post!['title'] ?? '').toString().trim().isNotEmpty)
         ? (post!['title'] ?? '').toString()
@@ -331,6 +322,13 @@ class _PostDetailPageState extends State<PostDetailPage> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
+          IconButton(
+            onPressed: toggleReadStatus,
+            icon: Icon(
+              isRead ? Icons.check_circle : Icons.check_circle_outline,
+              color: isRead ? const Color(0xFF95DDB4) : AppColors.charcoal,
+            ),
+          ),
           IconButton(
             onPressed: toggleFavorite,
             icon: Icon(
@@ -388,36 +386,39 @@ class _PostDetailPageState extends State<PostDetailPage> {
               height: 1.3,
             ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  (post!['url'] ?? '').toString(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w500,
-                  ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: GestureDetector(
+              onTap: openOriginalLink,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3F4F4),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.open_in_new,
+                      size: 16,
+                      color: AppColors.textSecondary,
+                    ),
+                    SizedBox(width: 6),
+                    Text(
+                      '원본 바로가기',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              TextButton.icon(
-                onPressed: openOriginalLink,
-                icon: const Icon(
-                  Icons.open_in_new,
-                  size: 16,
-                  color: AppColors.textSecondary,
-                ),
-                label: const Text(
-                  '원본 링크 이동',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
           const SizedBox(height: 16),
           Card(
@@ -471,7 +472,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                   const Text('• '),
                                   Expanded(
                                     child: Text(
-                                      line,
+                                      line.replaceFirst(RegExp(r'^•\s*'), ''),
                                       style: const TextStyle(height: 1.6),
                                     ),
                                   ),

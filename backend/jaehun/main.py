@@ -170,7 +170,7 @@ def save_to_firestore(post_data):
     try:
         doc_ref = db.collection('posts').document()
         kst = timezone(timedelta(hours=9))
-        post_data['createdAt'] = datetime.now(kst)
+        post_data['createdAt'] = firestore.SERVER_TIMESTAMP
         doc_ref.set(post_data)
         return True
     except Exception as e:

@@ -101,7 +101,7 @@ class _ArchivePageState extends State<ArchivePage> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('컬렉션으로 이동했습니다.'),
+        content: Text('컬렉션에 추가했습니다.'),
         duration: Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
       ),
@@ -572,10 +572,7 @@ class _ArchivePageState extends State<ArchivePage> {
                                           ),
                                           onSelected: (value) async {
                                             if (value == 'pin') {
-                                              await togglePinnedStatus(
-                                                id,
-                                                isPinned,
-                                              );
+                                              await togglePinnedStatus(id, isPinned);
                                             } else if (value == 'collection') {
                                               await moveToCollection(id);
                                             } else if (value == 'delete') {
@@ -585,11 +582,7 @@ class _ArchivePageState extends State<ArchivePage> {
                                           itemBuilder: (context) => [
                                             PopupMenuItem(
                                               value: 'pin',
-                                              child: Text(
-                                                isPinned
-                                                    ? '고정 해제'
-                                                    : '홈에 고정',
-                                              ),
+                                              child: Text(isPinned ? '고정 해제' : '홈에 고정'),
                                             ),
                                             const PopupMenuItem(
                                               value: 'collection',
