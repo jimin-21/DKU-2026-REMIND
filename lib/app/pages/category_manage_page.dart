@@ -40,23 +40,39 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
   }
 
   Future<void> loadCategories() async {
-    await _firestoreService.seedDefaultCategoriesIfNeeded();
-
     final data = await _firestoreService.getCategories();
 
     if (!mounted) return;
 
-    final mains = data.where((e) => (e['isMain'] ?? false) == true).toList()
-      ..sort((a, b) => ((a['sortOrder'] ?? 0) as int)
-          .compareTo((b['sortOrder'] ?? 0) as int));
+    Map<String, Map<String, dynamic>> uniqueByName(List<Map<String, dynamic>> list) {
+      final Map<String, Map<String, dynamic>> result = {};
 
-    final etcs = data
-        .where((e) =>
-            (e['isMain'] ?? false) == false &&
-            ((e['count'] ?? 0) as int) > 0)
+      for (final item in list) {
+        final name = (item['name'] ?? '').toString().trim();
+        if (name.isEmpty) continue;
+
+        if (!result.containsKey(name)) {
+          result[name] = item;
+        }
+      }
+
+      return result;
+    }
+
+    final rawMains = data
+        .where((e) => (e['isMain'] ?? false) == true)
         .toList()
       ..sort((a, b) => ((a['sortOrder'] ?? 0) as int)
           .compareTo((b['sortOrder'] ?? 0) as int));
+
+    final rawEtcs = data
+        .where((e) => (e['isMain'] ?? false) == false)
+        .toList()
+      ..sort((a, b) => ((a['sortOrder'] ?? 0) as int)
+          .compareTo((b['sortOrder'] ?? 0) as int));
+
+    final mains = uniqueByName(rawMains).values.toList();
+    final etcs = uniqueByName(rawEtcs).values.toList();
 
     setState(() {
       mainCategories = mains;
@@ -136,18 +152,38 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
     );
 
     if (result != null && result.isNotEmpty) {
+      final newName = result.trim();
+
+      final existingNames = [
+        ...mainCategories,
+        ...etcCategories,
+      ]
+          .map((e) => (e['name'] ?? '').toString().trim())
+          .where((name) => name.isNotEmpty)
+          .toSet();
+
+      if (existingNames.contains(newName)) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$newName 카테고리는 이미 있습니다.')),
+        );
+        return;
+      }
+
       await _firestoreService.addCategory(
-        name: result,
+        name: newName,
         isMain: false,
-        color: categoryColors[(mainCategories.length + etcCategories.length) %
-            categoryColors.length],
+        color: categoryColors[
+            (mainCategories.length + etcCategories.length) %
+                categoryColors.length],
       );
 
       await loadCategories();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$result 카테고리를 추가했습니다.')),
+        SnackBar(content: Text('$newName 카테고리를 추가했습니다.')),
       );
     }
   }

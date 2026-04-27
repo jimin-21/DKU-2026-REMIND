@@ -200,12 +200,14 @@ class _HomeViewState extends State<HomeView> {
     final url = (post['url'] ?? '').toString().trim();
 
     if (summary.isNotEmpty) {
-      return summary
-          .split('\n')
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .take(3)
-          .toList();
+return summary
+    .split('\n')
+    .map((e) => e.trim())
+    .where((e) => e.isNotEmpty)
+    .map((e) => e.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), ''))
+    .where((e) => e.isNotEmpty)
+    .take(3)
+    .toList();
     }
 
     if (url.isNotEmpty) {

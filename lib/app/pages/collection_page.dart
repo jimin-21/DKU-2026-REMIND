@@ -208,6 +208,8 @@ class _CollectionPageState extends State<CollectionPage> {
           .split('\n')
           .map((e) => e.trim())
           .where((e) => e.isNotEmpty)
+          .map((e) => e.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), ''))
+          .where((e) => e.isNotEmpty)
           .take(3)
           .toList();
     }

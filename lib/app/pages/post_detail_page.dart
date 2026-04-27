@@ -472,7 +472,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                   const Text('• '),
                                   Expanded(
                                     child: Text(
-                                      line.replaceFirst(RegExp(r'^•\s*'), ''),
+                                      line.replaceFirst(RegExp(r'^[•\-\*]\s*'), ''),
                                       style: const TextStyle(height: 1.6),
                                     ),
                                   ),
