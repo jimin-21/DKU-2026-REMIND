@@ -182,7 +182,7 @@ def analyze_url(url: str):
     if "instagram.com" in url: title, content, thumbnail = get_instagram_data(url)
     else: title, content, thumbnail = get_web_data(url)
     summary, category, tags = get_ai_summary(content, use_pro=True)
-    post_data = {"title": title, "summary": summary, "category": category, "tags": tags, "thumbnail": thumbnail, "url": url, "status": "ACTIVE", "isFavorite": False, "isPinned": False, "isRead": False, "isDeleted": False, "memo_text":""}
+    post_data = {"title": title, "summary": summary, "category": category, "tags": tags, "thumbnail": thumbnail, "url": url, "status": "ACTIVE", "isFavorite": False, "isPinned": False, "isRead": False, "isDeleted": False, "isCollected": False, "memo": "", "originalText": content, "memo_text":""}
     if save_to_firestore(post_data): return {"status": "success", "message": "Analyzed content saved to Firestore."}
     else: raise HTTPException(status_code=500, detail="Database save failed.")
 
@@ -199,7 +199,7 @@ async def analyze_image(file: UploadFile = File(...)):
         )
         raw_text = ocr_response.choices[0].message.content
         summary, category, tags = get_ai_summary(raw_text, use_pro=True)
-        post_data = {"title": "이미지 분석 결과", "summary": summary, "category": category, "tags": tags, "thumbnail": "", "url": "uploaded_file", "status": "ACTIVE", "isFavorite": False, "isPinned": False, "isRead": False, "isDeleted": False, "memo_text":""}
+        post_data = {"title": "이미지 분석 결과", "summary": summary, "category": category, "tags": tags, "thumbnail": "", "url": "uploaded_file", "status": "ACTIVE", "isFavorite": False, "isPinned": False, "isRead": False, "isDeleted": False, "isCollected": False, "memo": "", "originalText": raw_text, "memo_text":""}
         if save_to_firestore(post_data): return {"status": "success", "message": "Image analysis saved to Firestore."}
         else: raise HTTPException(status_code=500, detail="Database save failed.")
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
