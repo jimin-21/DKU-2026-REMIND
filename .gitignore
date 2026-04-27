@@ -3,7 +3,7 @@
 venv/
 backend/jaehun/venv/
 
-# Firebase 마스터키 (보안상 절대 금지!)
+# Firebase 마스터키 (보안상 절대 금지)
 resee-app-firebase-adminsdk-fbsvc-7110fd24e7.json
 backend/jaehun/resee-app-firebase-adminsdk-fbsvc-7110fd24e7.json
 
@@ -15,7 +15,7 @@ backend/jaehun/.env
 __pycache__/
 *.pyc
 
-# --- [지민님의 Flutter/IDE 설정] ---
+# --- [Flutter/IDE 설정] ---
 # Miscellaneous
 *.class
 *.log
