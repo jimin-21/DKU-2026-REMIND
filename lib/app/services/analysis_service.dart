@@ -33,7 +33,10 @@ class AnalysisService {
     }
   }
 
-  Future<bool> analyzeImageBytes(Uint8List bytes, String filename) async {
+  Future<bool> analyzeImageFiles(
+    List<Uint8List> bytesList,
+    List<String> filenames,
+  ) async {
     try {
       final uri = Uri.parse('$baseUrl/analyze/image');
 
@@ -43,13 +46,15 @@ class AnalysisService {
         'accept': 'application/json',
       });
 
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: filename,
-        ),
-      );
+      for (int i = 0; i < bytesList.length; i++) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'files',
+            bytesList[i],
+            filename: i < filenames.length ? filenames[i] : 'image_$i.jpg',
+          ),
+        );
+      }
 
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
@@ -65,5 +70,9 @@ class AnalysisService {
       print('Analyze Image Error: $e');
       return false;
     }
+  }
+
+  Future<bool> analyzeImageBytes(Uint8List bytes, String filename) async {
+    return analyzeImageFiles([bytes], [filename]);
   }
 }

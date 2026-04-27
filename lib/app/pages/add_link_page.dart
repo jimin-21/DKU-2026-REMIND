@@ -19,9 +19,9 @@ class _AddLinkPageState extends State<AddLinkPage> {
 
   bool isLoading = false;
   bool isLinkMode = true;
-  String? uploadedImageName;
-  Uint8List? selectedImageBytes;
-  String? selectedImageFileName;
+
+  List<Uint8List> selectedImageBytesList = [];
+  List<String> selectedImageFileNames = [];
 
   @override
   void dispose() {
@@ -32,7 +32,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
   Future<void> handleSubmit() async {
     final isDisabled =
         (isLinkMode && urlController.text.trim().isEmpty) ||
-        (!isLinkMode && selectedImageBytes == null);
+        (!isLinkMode && selectedImageBytesList.isEmpty);
 
     if (isDisabled || isLoading) return;
 
@@ -42,17 +42,17 @@ class _AddLinkPageState extends State<AddLinkPage> {
 
     try {
       if (isLinkMode) {
-        final inputUrl = urlController.text.trim();
-
-        final success = await _analysisService.analyzeUrl(inputUrl);
+        final success = await _analysisService.analyzeUrl(
+          urlController.text.trim(),
+        );
 
         if (!success) {
           throw Exception('AI 분석 실패');
         }
       } else {
-        final success = await _analysisService.analyzeImageBytes(
-          selectedImageBytes!,
-          selectedImageFileName ?? 'image.jpg',
+        final success = await _analysisService.analyzeImageFiles(
+          selectedImageBytesList,
+          selectedImageFileNames,
         );
 
         if (!success) {
@@ -101,18 +101,24 @@ class _AddLinkPageState extends State<AddLinkPage> {
     }
   }
 
-  Future<void> pickImage() async {
+  Future<void> pickImages() async {
     final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
+    final images = await picker.pickMultiImage();
 
-    if (image == null) return;
+    if (images.isEmpty) return;
 
-    final bytes = await image.readAsBytes();
+    final bytesList = <Uint8List>[];
+    final fileNames = <String>[];
+
+    for (final image in images) {
+      final bytes = await image.readAsBytes();
+      bytesList.add(bytes);
+      fileNames.add(image.name);
+    }
 
     setState(() {
-      selectedImageBytes = bytes;
-      selectedImageFileName = image.name;
-      uploadedImageName = image.name;
+      selectedImageBytesList = bytesList;
+      selectedImageFileNames = fileNames;
     });
   }
 
@@ -120,7 +126,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
   Widget build(BuildContext context) {
     final isDisabled =
         (isLinkMode && urlController.text.trim().isEmpty) ||
-        (!isLinkMode && selectedImageBytes == null);
+        (!isLinkMode && selectedImageBytesList.isEmpty);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -295,7 +301,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '이미지를 분석해 제목, 요약, 태그, 카테고리를 자동으로 저장합니다.',
+                    '여러 장의 이미지를 함께 분석해 제목, 요약, 태그, 카테고리를 자동으로 저장합니다.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: AppColors.textSecondary,
@@ -305,17 +311,32 @@ class _AddLinkPageState extends State<AddLinkPage> {
                   ),
                   const SizedBox(height: 16),
                   OutlinedButton(
-                    onPressed: isLoading ? null : pickImage,
+                    onPressed: isLoading ? null : pickImages,
                     child: const Text('파일 선택'),
                   ),
-                  if (uploadedImageName != null) ...[
+                  if (selectedImageFileNames.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Text(
-                      '✓ $uploadedImageName 업로드됨',
+                      '✓ ${selectedImageFileNames.length}장 선택됨',
                       style: const TextStyle(
                         color: AppColors.success,
                         fontSize: 13,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...selectedImageFileNames.map(
+                      (name) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
                     ),
                   ],
