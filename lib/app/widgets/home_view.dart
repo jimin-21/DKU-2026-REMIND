@@ -34,16 +34,30 @@ class _HomeViewState extends State<HomeView> {
   }
 
   Future<void> loadPosts() async {
-    final data = await _firestoreService.getPosts();
+    try {
+      final data = await _firestoreService.getPosts();
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      posts = data.where((post) => (post['isDeleted'] ?? false) == false).toList();
-      isLoading = false;
-    });
+      setState(() {
+        posts = data
+            .where((post) => (post['isDeleted'] ?? false) == false)
+            .toList();
+        isLoading = false;
+      });
 
-    refreshRandomPosts();
+      refreshRandomPosts();
+    } catch (e) {
+      print('HomeView loadPosts error: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        posts = [];
+        randomPosts = [];
+        isLoading = false;
+      });
+    }
   }
 
   Future<void> togglePinnedStatus(String id, bool currentValue) async {
@@ -81,7 +95,7 @@ class _HomeViewState extends State<HomeView> {
     final title = (post['title'] ?? '').toString().toLowerCase();
     final summary = (post['summary'] ?? '').toString().toLowerCase();
     final url = (post['url'] ?? '').toString().toLowerCase();
-    final category = (post['category'] ?? '').toString().toLowerCase();
+    final category = getEffectiveCategory(post).toLowerCase();
     final memo = (post['memo'] ?? '').toString().toLowerCase();
 
     final tags = (post['tags'] is List)
@@ -246,6 +260,32 @@ return summary
     }
   }
 
+  String getEffectiveCategory(Map<String, dynamic> post) {
+    final category = (post['category'] ?? '기타').toString().trim();
+
+    if (category != '기타') return category;
+
+    final tags = post['tags'];
+
+    if (tags is List && tags.isNotEmpty) {
+      final firstTag = tags.first.toString().replaceAll('#', '').trim();
+
+      final knownCategories = {
+        '자기계발',
+        '운동',
+        '장소',
+        '쇼핑',
+        '음악',
+      };
+
+      if (knownCategories.contains(firstTag)) {
+        return firstTag;
+      }
+    }
+
+    return category;
+  }
+
   Color getCategoryChipColor(String category) {
     switch (category) {
       case '자기계발':
@@ -270,7 +310,7 @@ return summary
     final bool isRead = post['isRead'] ?? false;
     final bool isFavorite = post['isFavorite'] ?? false;
     final bool isPinned = post['isPinned'] ?? false;
-    final String category = (post['category'] ?? '기타').toString();
+    final String category = getEffectiveCategory(post);
     final String dateText = formatDate(post['createdAt']);
     final String title = getDisplayTitle(post);
     final List<String> summaryLines = getSummaryLines(post);

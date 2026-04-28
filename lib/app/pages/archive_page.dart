@@ -221,6 +221,24 @@ class _ArchivePageState extends State<ArchivePage> {
     return '제목 없음';
   }
 
+  String getEffectiveCategory(Map<String, dynamic> post) {
+    final category = (post['category'] ?? '기타').toString().trim();
+
+    if (category != '기타') return category;
+
+    final tags = post['tags'];
+
+    if (tags is List && tags.isNotEmpty) {
+      final firstTag = tags.first.toString().replaceAll('#', '').trim();
+
+      if (mainCategoryNames.contains(firstTag)) {
+        return firstTag;
+      }
+    }
+
+    return category;
+  }
+
   List<String> getSummaryLines(Map<String, dynamic> post) {
     final summary = (post['summary'] ?? '').toString().trim();
     final url = (post['url'] ?? '').toString().trim();
@@ -273,6 +291,7 @@ class _ArchivePageState extends State<ArchivePage> {
     }
   }
 
+
   Color getCategoryChipColor(String category) {
     switch (category) {
       case '자기계발':
@@ -308,7 +327,7 @@ class _ArchivePageState extends State<ArchivePage> {
       final isFavorite = post['isFavorite'] ?? false;
       final isDeleted = post['isDeleted'] ?? false;
       final isCollected = post['isCollected'] ?? false;
-      final category = (post['category'] ?? '').toString();
+      final category = getEffectiveCategory(post);
 
       if (isDeleted == true) return false;
       if (isCollected == true) return false;
@@ -456,8 +475,7 @@ class _ArchivePageState extends State<ArchivePage> {
                             final bool isRead = post['isRead'] ?? false;
                             final bool isFavorite = post['isFavorite'] ?? false;
                             final bool isPinned = post['isPinned'] ?? false;
-                            final String category =
-                                (post['category'] ?? '기타').toString();
+                            final String category = getEffectiveCategory(post);
                             final String dateText =
                                 formatDate(post['createdAt']);
                             final String title = getDisplayTitle(post);

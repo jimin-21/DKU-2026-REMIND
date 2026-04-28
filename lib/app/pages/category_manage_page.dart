@@ -15,6 +15,10 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
 
   bool showEtcDetail = true;
   bool isLoading = true;
+  bool isLoadingSuggestion = true;
+
+  String? suggestedCategory;
+  int suggestedCount = 0;
 
   List<Map<String, dynamic>> mainCategories = [];
   List<Map<String, dynamic>> etcCategories = [];
@@ -32,11 +36,12 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
   @override
   void initState() {
     super.initState();
-    loadCategories();
+    initializePage();
   }
 
-  Color _pickNextColor() {
-    return Color(categoryColors[mainCategories.length % categoryColors.length]);
+  Future<void> initializePage() async {
+    await loadCategories();
+    await loadCategorySuggestion();
   }
 
   Future<void> loadCategories() async {
@@ -44,7 +49,9 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
 
     if (!mounted) return;
 
-    Map<String, Map<String, dynamic>> uniqueByName(List<Map<String, dynamic>> list) {
+    Map<String, Map<String, dynamic>> uniqueByName(
+      List<Map<String, dynamic>> list,
+    ) {
       final Map<String, Map<String, dynamic>> result = {};
 
       for (final item in list) {
@@ -78,6 +85,56 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
       mainCategories = mains;
       etcCategories = etcs;
       isLoading = false;
+    });
+  }
+
+  Future<void> loadCategorySuggestion() async {
+    final posts = await _firestoreService.getPosts();
+
+    if (!mounted) return;
+
+    final Map<String, int> tagCounts = {};
+
+    final existingNames = [
+      ...mainCategories,
+      ...etcCategories,
+    ]
+        .map((e) => (e['name'] ?? '').toString().trim())
+        .where((name) => name.isNotEmpty)
+        .toSet();
+
+    for (final post in posts) {
+      final bool isDeleted = post['isDeleted'] ?? false;
+      if (isDeleted) continue;
+
+      final category = (post['category'] ?? '').toString().trim();
+
+      if (category != '기타') continue;
+
+      final tags = post['tags'];
+      if (tags is! List || tags.isEmpty) continue;
+
+      final firstTag = tags.first.toString().trim().replaceAll('#', '');
+      if (firstTag.isEmpty) continue;
+      if (existingNames.contains(firstTag)) continue;
+
+      tagCounts[firstTag] = (tagCounts[firstTag] ?? 0) + 1;
+    }
+
+    String? picked;
+    int count = 0;
+
+    for (final entry in tagCounts.entries) {
+      if (entry.value >= 2 && entry.value > count) {
+        picked = entry.key;
+        count = entry.value;
+      }
+    }
+
+    setState(() {
+      suggestedCategory = picked;
+      suggestedCount = count;
+      isLoadingSuggestion = false;
     });
   }
 
@@ -152,40 +209,46 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
     );
 
     if (result != null && result.isNotEmpty) {
-      final newName = result.trim();
-
-      final existingNames = [
-        ...mainCategories,
-        ...etcCategories,
-      ]
-          .map((e) => (e['name'] ?? '').toString().trim())
-          .where((name) => name.isNotEmpty)
-          .toSet();
-
-      if (existingNames.contains(newName)) {
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$newName 카테고리는 이미 있습니다.')),
-        );
-        return;
-      }
-
-      await _firestoreService.addCategory(
-        name: newName,
-        isMain: false,
-        color: categoryColors[
-            (mainCategories.length + etcCategories.length) %
-                categoryColors.length],
-      );
-
-      await loadCategories();
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$newName 카테고리를 추가했습니다.')),
-      );
+      await addCategorySafely(result.trim());
     }
+  }
+
+  Future<void> addCategorySafely(String newName) async {
+    if (newName.isEmpty) return;
+
+    final existingNames = [
+      ...mainCategories,
+      ...etcCategories,
+    ]
+        .map((e) => (e['name'] ?? '').toString().trim())
+        .where((name) => name.isNotEmpty)
+        .toSet();
+
+    if (existingNames.contains(newName)) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$newName 카테고리는 이미 있습니다.')),
+      );
+      return;
+    }
+
+    await _firestoreService.addCategory(
+      name: newName,
+      isMain: false,
+      color: categoryColors[
+          (mainCategories.length + etcCategories.length) %
+              categoryColors.length],
+    );
+
+    await loadCategories();
+    await loadCategorySuggestion();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$newName 카테고리를 추가했습니다.')),
+    );
   }
 
   Future<void> _showDeleteDialog({
@@ -219,6 +282,7 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
       await onDelete();
 
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('$name 카테고리를 삭제했습니다.')),
       );
@@ -237,6 +301,7 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
           name: newName,
         );
         await loadCategories();
+        await loadCategorySuggestion();
       },
     );
   }
@@ -253,6 +318,7 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
           name: newName,
         );
         await loadCategories();
+        await loadCategorySuggestion();
       },
     );
   }
@@ -269,6 +335,7 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
           sortOrder: 100 + etcCategories.length,
         );
         await loadCategories();
+        await loadCategorySuggestion();
       },
     );
   }
@@ -289,8 +356,10 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
     );
 
     await loadCategories();
+    await loadCategorySuggestion();
 
     if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${item['name']} 카테고리를 메인으로 올렸습니다.')),
     );
@@ -309,6 +378,7 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
 
     await _firestoreService.reorderCategories(mainCategories);
     await loadCategories();
+    await loadCategorySuggestion();
   }
 
   Future<void> _moveMainDown(int index) async {
@@ -324,24 +394,7 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
 
     await _firestoreService.reorderCategories(mainCategories);
     await loadCategories();
-  }
-
-  Widget _buildCountChip(int count) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F4),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '$count',
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textSecondary,
-        ),
-      ),
-    );
+    await loadCategorySuggestion();
   }
 
   Widget _buildCategoryName({
@@ -391,7 +444,6 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
   }) {
     final String name = (item['name'] ?? '').toString();
     final String originalName = (item['originalName'] ?? '').toString();
-    final int count = (item['count'] ?? 0) as int;
     final int colorValue = (item['color'] ?? 0xFFC2D6CF) as int;
     final bool renamed = name.trim() != originalName.trim();
 
@@ -481,7 +533,6 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
   }) {
     final String name = (item['name'] ?? '').toString();
     final String originalName = (item['originalName'] ?? '').toString();
-    final int count = (item['count'] ?? 0) as int;
     final bool renamed = name.trim() != originalName.trim();
 
     return Column(
@@ -524,6 +575,62 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
             color: Color(0xFFD9D9D9),
           ),
       ],
+    );
+  }
+
+  Widget _buildSuggestionCard() {
+    if (isLoadingSuggestion ||
+        suggestedCategory == null ||
+        suggestedCount < 2) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF6F5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFF2B8B5),
+          width: 1.2,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.auto_awesome,
+            color: Color(0xFFF2B8B5),
+            size: 28,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              '$suggestedCategory 관련 글이 $suggestedCount개 있어요.\n새 카테고리로 추가할까요?',
+              style: const TextStyle(
+                fontSize: 15,
+                height: 1.45,
+                fontWeight: FontWeight.w600,
+                color: AppColors.charcoal,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          TextButton(
+            onPressed: () async {
+              await addCategorySafely(suggestedCategory!);
+            },
+            child: const Text(
+              '추가',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFF2B8B5),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -587,6 +694,7 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
                   ),
                 ),
                 const SizedBox(height: 36),
+                _buildSuggestionCard(),
                 const Padding(
                   padding: EdgeInsets.only(left: 6, bottom: 14),
                   child: Text(

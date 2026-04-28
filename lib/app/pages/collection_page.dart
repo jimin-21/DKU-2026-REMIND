@@ -265,6 +265,29 @@ class _CollectionPageState extends State<CollectionPage> {
     }
   }
 
+  String getEffectiveCategory(Map<String, dynamic> post) {
+    final category = (post['category'] ?? '기타').toString().trim();
+
+    if (category != '기타') return category;
+
+    final tags = post['tags'];
+
+    if (tags is List && tags.isNotEmpty) {
+      final firstTag = tags.first.toString().replaceAll('#', '').trim();
+
+      final knownCategories = {
+        ...mainCategoryNames,
+        '음악',
+      };
+
+      if (knownCategories.contains(firstTag)) {
+        return firstTag;
+      }
+    }
+
+    return category;
+  }
+
   String? getSelectedMainCategoryName() {
     final int dynamicIndex = categoryTab - AppCategories.fixedTabs.length;
 
@@ -284,7 +307,7 @@ class _CollectionPageState extends State<CollectionPage> {
       final query = searchQuery.toLowerCase();
       final isFavorite = post['isFavorite'] ?? false;
       final isDeleted = post['isDeleted'] ?? false;
-      final category = (post['category'] ?? '').toString();
+      final category = getEffectiveCategory(post);
 
       if (isDeleted == true) return false;
 
@@ -453,8 +476,7 @@ class _CollectionPageState extends State<CollectionPage> {
                             final String id = post['id'] ?? '';
                             final bool isFavorite = post['isFavorite'] ?? false;
                             final bool isPinned = post['isPinned'] ?? false;
-                            final String category =
-                                (post['category'] ?? '기타').toString();
+                            final String category = getEffectiveCategory(post);
                             final String dateText =
                                 formatDate(post['createdAt']);
                             final String title = getDisplayTitle(post);

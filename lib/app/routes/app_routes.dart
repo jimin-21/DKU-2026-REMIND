@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../pages/account_settings_page.dart';
 import '../pages/add_link_page.dart';
 import '../pages/archive_page.dart';
-import '../pages/category_edit_page.dart';
 import '../pages/category_manage_page.dart';
 import '../pages/collection_page.dart';
 import '../pages/home_page.dart';
@@ -17,14 +16,13 @@ class AppRoutes {
   static const String archive = '/archive';
   static const String add = '/add';
   static const String my = '/my';
-  static const String categoryEdit = '/category-edit';
   static const String categoryManage = '/category-manage';
   static const String unread = '/unread';
   static const String post = '/post';
   static const String accountSettings = '/account-settings';
   static const String trash = '/trash';
   static const String collection = '/collection';
-  static const pinned = '/pinned';
+  static const String pinned = '/pinned';
 
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -39,9 +37,6 @@ class AppRoutes {
 
       case my:
         return MaterialPageRoute(builder: (_) => const MyPage());
-
-      case categoryEdit:
-        return MaterialPageRoute(builder: (_) => const CategoryEditPage());
 
       case categoryManage:
         return MaterialPageRoute(builder: (_) => const CategoryManagePage());
@@ -68,11 +63,10 @@ class AppRoutes {
           builder: (_) => const CollectionPage(),
         );
 
-      case AppRoutes.pinned:
+      case pinned:
         return MaterialPageRoute(
           builder: (_) => const PinnedPage(),
         );
-        
 
       default:
         return MaterialPageRoute(

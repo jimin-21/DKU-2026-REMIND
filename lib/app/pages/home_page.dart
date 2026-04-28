@@ -70,27 +70,38 @@ class _HomePageState extends State<HomePage> {
 
     if (!mounted) return;
 
-    final Map<String, int> categoryCounts = {};
+    final Map<String, int> tagCounts = {};
 
     for (final post in data) {
       final bool isDeleted = post['isDeleted'] ?? false;
       if (isDeleted) continue;
 
-      final rawCategory = (post['category'] ?? '').toString().trim();
-      if (rawCategory.isEmpty) continue;
+      final category = (post['category'] ?? '').toString().trim();
 
-      if (mainCategoryNames.contains(rawCategory)) continue;
-      if (rawCategory == '기타') continue;
-      if (dismissedSuggestedCategories.contains(rawCategory)) continue;
+      // 이미 메인 카테고리면 추천 대상 아님
+      if (mainCategoryNames.contains(category)) continue;
 
-      categoryCounts[rawCategory] = (categoryCounts[rawCategory] ?? 0) + 1;
+      // 기타인 글만 태그 기반으로 추천
+      if (category != '기타') continue;
+
+      final rawTags = post['tags'];
+
+      if (rawTags is! List || rawTags.isEmpty) continue;
+
+      final firstTag = rawTags.first.toString().trim().replaceAll('#', '');
+
+      if (firstTag.isEmpty) continue;
+      if (mainCategoryNames.contains(firstTag)) continue;
+      if (dismissedSuggestedCategories.contains(firstTag)) continue;
+
+      tagCounts[firstTag] = (tagCounts[firstTag] ?? 0) + 1;
     }
 
     String? pickedCategory;
     int pickedCount = 0;
 
-    for (final entry in categoryCounts.entries) {
-      if (entry.value >= 5 && entry.value > pickedCount) {
+    for (final entry in tagCounts.entries) {
+      if (entry.value >= 2 && entry.value > pickedCount) {
         pickedCategory = entry.key;
         pickedCount = entry.value;
       }
@@ -154,7 +165,7 @@ class _HomePageState extends State<HomePage> {
     final bool showCategoryAlert =
         !isLoadingSuggestion &&
         suggestedCategoryName != null &&
-        suggestedCategoryCount >= 5;
+        suggestedCategoryCount >= 2;
 
     return Scaffold(
       backgroundColor: AppColors.background,
