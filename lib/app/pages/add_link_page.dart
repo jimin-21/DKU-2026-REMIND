@@ -1,10 +1,12 @@
-import 'package:flutter/material.dart';
 import 'dart:typed_data';
+import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import '../pages/archive_page.dart';
+
+import '../routes/app_routes.dart';
+import '../services/analysis_service.dart';
+import '../services/firestore_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radii.dart';
-import '../services/analysis_service.dart';
 
 class AddLinkPage extends StatefulWidget {
   const AddLinkPage({super.key});
@@ -15,7 +17,9 @@ class AddLinkPage extends StatefulWidget {
 
 class _AddLinkPageState extends State<AddLinkPage> {
   final TextEditingController urlController = TextEditingController();
+
   final AnalysisService _analysisService = AnalysisService();
+  final FirestoreService _firestoreService = FirestoreService();
 
   bool isLoading = false;
   bool isLinkMode = true;
@@ -41,24 +45,31 @@ class _AddLinkPageState extends State<AddLinkPage> {
     });
 
     try {
-      if (isLinkMode) {
-        final success = await _analysisService.analyzeUrl(
-          urlController.text.trim(),
-        );
+      Map<String, dynamic> analyzedData;
 
-        if (!success) {
-          throw Exception('AI 분석 실패');
-        }
+      if (isLinkMode) {
+        final inputUrl = urlController.text.trim();
+
+        analyzedData = await _analysisService.analyzeUrl(inputUrl);
       } else {
-        final success = await _analysisService.analyzeImageFiles(
+        analyzedData = await _analysisService.analyzeImageFiles(
           selectedImageBytesList,
           selectedImageFileNames,
         );
-
-        if (!success) {
-          throw Exception('이미지 분석 실패');
-        }
       }
+
+      await _firestoreService.addPost(
+        url: (analyzedData['url'] ?? '').toString(),
+        title: (analyzedData['title'] ?? '제목 없음').toString(),
+        summary: (analyzedData['summary'] ?? '').toString(),
+        tags: (analyzedData['tags'] as List<dynamic>? ?? [])
+            .map((e) => e.toString())
+            .toList(),
+        category: (analyzedData['category'] ?? '기타').toString(),
+        thumbnail: (analyzedData['thumbnail'] ?? '').toString(),
+        status: (analyzedData['status'] ?? 'ACTIVE').toString(),
+        originalText: (analyzedData['originalText'] ?? '').toString(),
+      );
 
       if (!mounted) return;
 
@@ -78,13 +89,14 @@ class _AddLinkPageState extends State<AddLinkPage> {
 
       if (!mounted) return;
 
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (_) => const ArchivePage(),
-        ),
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.archive,
         (route) => false,
       );
     } catch (e) {
+      print('저장 오류: $e');
+
       if (!mounted) return;
 
       setState(() {
@@ -94,7 +106,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('저장 중 오류가 발생했습니다. $e'),
-          duration: const Duration(seconds: 2),
+          duration: const Duration(seconds: 3),
           behavior: SnackBarBehavior.floating,
         ),
       );

@@ -1,7 +1,35 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  String get _currentUserId {
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      throw Exception('로그인이 필요합니다.');
+    }
+
+    return user.uid;
+  }
+
+  DateTime _parseDate(dynamic value) {
+    try {
+      if (value == null) {
+        return DateTime.fromMillisecondsSinceEpoch(0);
+      }
+
+      if (value is DateTime) {
+        return value;
+      }
+
+      return value.toDate();
+    } catch (_) {
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+  }
 
   Future<void> addPost({
     required String url,
@@ -11,8 +39,20 @@ class FirestoreService {
     required String category,
     required String thumbnail,
     String status = 'ACTIVE',
+    String originalText = '',
   }) async {
-    await _db.collection('posts').add({
+    final userId = _currentUserId;
+
+    print('==============================');
+    print('Firestore addPost 실행됨');
+    print('현재 로그인 userId: $userId');
+    print('저장 title: $title');
+    print('저장 url: $url');
+    print('저장 category: $category');
+    print('==============================');
+
+    final docRef = await _db.collection('posts').add({
+      'userId': userId,
       'url': url,
       'title': title,
       'summary': summary,
@@ -21,38 +61,70 @@ class FirestoreService {
       'thumbnail': thumbnail,
       'status': status,
       'memo': '',
-      'originalText': '',
+      'originalText': originalText,
       'isRead': false,
       'isFavorite': false,
       'isPinned': false,
       'isDeleted': false,
       'isCollected': false,
-      'createdAt': FieldValue.serverTimestamp(),
+      'createdAt': Timestamp.fromDate(DateTime.now()),
+      'completedAt': null,
     });
+
+    print('Firestore 저장 완료');
+    print('저장된 문서 ID: ${docRef.id}');
+    print('==============================');
   }
 
   Future<List<Map<String, dynamic>>> getPosts() async {
+    final userId = _currentUserId;
+
+    print('==============================');
+    print('Firestore getPosts 실행됨');
+    print('현재 조회 userId: $userId');
+    print('==============================');
+
     final snapshot = await _db
         .collection('posts')
-        .orderBy('createdAt', descending: true)
+        .where('userId', isEqualTo: userId)
         .get();
 
-    return snapshot.docs.map((doc) {
+    final posts = snapshot.docs.map((doc) {
       return {
         'id': doc.id,
         ...doc.data(),
       };
     }).toList();
+
+    posts.sort((a, b) {
+      final aDate = _parseDate(a['createdAt']);
+      final bDate = _parseDate(b['createdAt']);
+      return bDate.compareTo(aDate);
+    });
+
+    print('조회된 글 개수: ${posts.length}');
+    print('==============================');
+
+    return posts;
   }
 
   Future<Map<String, dynamic>?> getPostById(String id) async {
+    final userId = _currentUserId;
+
     final doc = await _db.collection('posts').doc(id).get();
 
     if (!doc.exists) return null;
 
+    final data = doc.data()!;
+    final postUserId = data['userId'];
+
+    if (postUserId != userId) {
+      return null;
+    }
+
     return {
       'id': doc.id,
-      ...doc.data()!,
+      ...data,
     };
   }
 
@@ -96,6 +168,7 @@ class FirestoreService {
   Future<void> updateCollectedStatus(String id, bool isCollected) async {
     await _db.collection('posts').doc(id).update({
       'isCollected': isCollected,
+      'completedAt': isCollected ? Timestamp.fromDate(DateTime.now()) : null,
     });
   }
 

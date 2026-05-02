@@ -6,18 +6,13 @@ import os
 import re
 import json
 import base64
-from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from openai import OpenAI
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import PromptTemplate
-
-import firebase_admin
-from firebase_admin import credentials, firestore
 
 load_dotenv()
+
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -37,127 +32,189 @@ class CategoryUpdate(BaseModel):
     category: str
 
 
-cred = credentials.Certificate("resee-app-firebase-adminsdk-fbsvc-7110fd24e7.json")
-if not firebase_admin._apps:
-    firebase_admin.initialize_app(cred)
-
-db = firestore.client()
-
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-llm_pro = ChatOpenAI(
-    model_name="gpt-4o",
-    temperature=0,
-    openai_api_key=OPENAI_API_KEY,
-)
-vision_client = OpenAI(api_key=OPENAI_API_KEY)
-
-summary_prompt = PromptTemplate(
-    input_variables=["content"],
-    template="""
-    너는 콘텐츠 분석 전문가야. 아래 규칙을 '반드시' 지켜서 분석해줘.
-    사용자가 한눈에 정보를 파악할 수 있도록 불필요한 서술어는 빼고 핵심 데이터만 정리해줘.
-
-    [작성 규칙]
-    1. 반드시 한국어로 답변할 것.
-    2. [전수 조사]: 본문에 나열된 모든 정보(장소, 제품, 아티스트, 곡명 등)를 절대로 하나도 빠뜨리지 말고 모두 포함해.
-    3. [문장 형식 금지]: 서술형 문장을 사용하지 마.
-    4. [리스트 형식]: 반드시 '• 항목명: 상세설명' 형식을 사용하고, 항목 간에는 줄바꿈을 해줘.
-    
-    5. [태그 규칙 - 중요]: 'tags' 배열의 첫 번째 요소는 반드시 콘텐츠의 대주제(음악, 장소, 쇼핑, 운동, 자기계발 등)여야 함.
-       예: 음악이면 ["음악", "아티스트명"], 맛집이면 ["장소", "강남맛집"]
-
-    6. [카테고리 선택 - 아래 5개 중 하나만 선택]
-       - 장소, 자기계발, 쇼핑, 운동, 기타
-
-    본문 내용:
-    {content}
-
-    답변 형식(JSON):
-    {{
-        "summary": "요약내용", 
-        "category": "장소/자기계발/쇼핑/운동/기타 중 택1", 
-        "tags": ["대주제", "핵심키워드"]
-    }}
-    """,
-)
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-def get_ai_summary(content, use_pro=False):
-    if not content or content == "내용 없음" or len(content) < 10:
-        return "정보를 추출할 본문이 부족합니다.", "기타", ["내용부족"]
+def make_fallback_summary(content: str):
+    lines = [
+        line.strip()
+        for line in content.splitlines()
+        if line.strip()
+    ]
 
-    try:
-        formatted_prompt = summary_prompt.format(content=content[:4000])
-        response_message = llm_pro.invoke(formatted_prompt)
-        clean_res = (
-            response_message.content
-            .replace("```json", "")
-            .replace("```", "")
+    cleaned = []
+
+    for line in lines:
+        if line.startswith("#"):
+            continue
+
+        line = (
+            line.replace("👉", "")
+            .replace("✔", "")
+            .replace("💡", "")
+            .replace("💌", "")
             .strip()
         )
 
-        result = json.loads(clean_res)
+        if line:
+            cleaned.append(line)
 
-        summary_text = result.get("summary", "")
-        ai_category = result.get("category", "기타").strip()
+    if not cleaned:
+        return "요약할 수 있는 본문이 부족합니다."
+
+    picked = cleaned[:6]
+
+    return "\n".join([f"• {line}" for line in picked])
+
+
+def make_fallback_tags(content: str):
+    tags = []
+
+    if any(word in content for word in ["낮잠", "졸릴", "집중", "커피냅"]):
+        tags.append("집중")
+    if "괄사" in content:
+        tags.append("괄사")
+    if any(word in content for word in ["사탕", "캔디", "박하"]):
+        tags.append("간식")
+    if any(word in content for word in ["아이드롭", "렌즈", "눈", "피로"]):
+        tags.append("아이케어")
+    if any(word in content for word in ["쿠팡", "추천", "제품", "필수템"]):
+        tags.append("추천템")
+    if "대학생" in content:
+        tags.append("대학생")
+    if any(word in content for word in ["맛집", "카페", "여행", "숙소"]):
+        tags.append("장소")
+    if any(word in content for word in ["운동", "헬스", "러닝", "다이어트"]):
+        tags.append("운동")
+
+    if not tags:
+        tags = ["기록"]
+
+    return tags[:3]
+
+
+def guess_category(content: str):
+    if any(word in content for word in ["운동", "헬스", "러닝", "다이어트", "필라테스"]):
+        return "운동"
+
+    if any(word in content for word in ["카페", "맛집", "여행", "숙소", "장소", "전시"]):
+        return "장소"
+
+    if any(
+        word in content
+        for word in ["쿠팡", "구매", "제품", "추천템", "사탕", "캔디", "아이드롭", "괄사", "필수템"]
+    ):
+        return "쇼핑"
+
+    if any(word in content for word in ["공부", "집중", "습관", "생산성", "낮잠", "커피냅"]):
+        return "자기계발"
+
+    return "기타"
+
+
+def get_ai_summary(content: str):
+    if not content or content == "내용 없음" or len(content.strip()) < 10:
+        return "정보를 추출할 본문이 부족합니다.", "기타", ["내용부족"]
+
+    try:
+        prompt = f"""
+너는 콘텐츠 분석 전문가야.
+아래 본문을 한국어로 분석해서 반드시 JSON만 반환해.
+
+규칙:
+1. summary는 줄바꿈이 있는 리스트 형식으로 작성해.
+2. summary의 각 줄은 반드시 "• 항목: 설명" 형식으로 작성해.
+3. category는 장소, 자기계발, 쇼핑, 운동, 기타 중 하나만 선택해.
+4. tags는 핵심 키워드 2~3개 배열로 작성해.
+5. 코드블록 없이 JSON 객체만 반환해.
+
+본문:
+{content[:4000]}
+
+반환 형식:
+{{
+  "summary": "• 항목: 설명\\n• 항목: 설명",
+  "category": "기타",
+  "tags": ["키워드1", "키워드2"]
+}}
+"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "너는 반드시 JSON 객체만 반환하는 콘텐츠 분석기야.",
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            temperature=0,
+            response_format={"type": "json_object"},
+        )
+
+        raw = response.choices[0].message.content.strip()
+        result = json.loads(raw)
+
+        summary_text = str(result.get("summary", "")).strip()
+        ai_category = str(result.get("category", "기타")).strip()
         tags = result.get("tags", [])
-
-        final_tags = tags[:3] if isinstance(tags, list) else []
 
         allowed_categories = ["장소", "자기계발", "쇼핑", "운동", "기타"]
 
         if ai_category not in allowed_categories:
-            if any(
-                word in ai_category
-                for word in ["맛집", "여행", "카페", "사찰", "숙소", "장소"]
-            ):
-                ai_category = "장소"
-            elif any(
-                word in ai_category
-                for word in ["정책", "재테크", "공부", "팁", "카드", "혜택"]
-            ):
-                ai_category = "자기계발"
-            else:
-                ai_category = "기타"
+            ai_category = guess_category(content)
 
-        policy_keywords = [
-            "K-패스",
-            "K패스",
-            "환급",
-            "카드",
-            "정책",
-            "정부",
-            "혜택",
-            "교통비",
-        ]
+        if not isinstance(tags, list):
+            tags = []
 
-        if ai_category == "장소" and any(
-            word in summary_text for word in policy_keywords
-        ):
-            ai_category = "자기계발"
+        final_tags = [
+            str(tag).strip()
+            for tag in tags
+            if str(tag).strip()
+        ][:3]
+
+        if not summary_text:
+            summary_text = make_fallback_summary(content)
+
+        if not final_tags:
+            final_tags = make_fallback_tags(content)
+
+        if not ai_category:
+            ai_category = guess_category(content)
 
         return summary_text, ai_category, final_tags
 
     except Exception as e:
         print(f"요약 에러: {e}")
-        return "분석 중 오류 발생", "기타", []
+
+        fallback_summary = make_fallback_summary(content)
+        fallback_category = guess_category(content)
+        fallback_tags = make_fallback_tags(content)
+
+        return fallback_summary, fallback_category, fallback_tags
 
 
-def get_instagram_data(url):
+def get_instagram_data(url: str):
     api_url = "https://instagram-scraper-stable-api.p.rapidapi.com/get_media_data_v2.php"
 
-    match = re.search(r'/(?:p|reel|reels)/([A-Za-z0-9_-]+)', url)
+    match = re.search(r"/(?:p|reel|reels)/([A-Za-z0-9_-]+)", url)
     media_code = match.group(1) if match else ""
 
     headers = {
-        "x-rapidapi-key": RAPIDAPI_KEY,
+        "x-rapidapi-key": RAPIDAPI_KEY or "",
         "x-rapidapi-host": "instagram-scraper-stable-api.p.rapidapi.com",
     }
 
@@ -172,7 +229,7 @@ def get_instagram_data(url):
         data = response.json()
         items = data.get("data") or data.get("items") or [data]
 
-        if isinstance(items, list):
+        if isinstance(items, list) and items:
             items = items[0]
 
         content = "내용 없음"
@@ -198,22 +255,52 @@ def get_instagram_data(url):
 
         return "Instagram 콘텐츠", content, thumbnail
 
-    except Exception:
-        return "Instagram 에러", "내용 없음", ""
+    except Exception as e:
+        print(f"Instagram 추출 에러: {e}")
+        return "Instagram 콘텐츠", "내용 없음", ""
 
 
-def save_to_firestore(post_data):
+def get_web_data(url: str):
     try:
-        doc_ref = db.collection("posts").document()
-        post_data["createdAt"] = datetime.now(timezone(timedelta(hours=9)))
-        doc_ref.set(post_data)
-        return True
-    except Exception:
-        return False
+        response = requests.get(
+            url,
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10,
+        )
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        title = (
+            soup.title.string.strip()
+            if soup.title and soup.title.string
+            else "제목 없음"
+        )
+
+        for tag in soup(["script", "style", "noscript"]):
+            tag.decompose()
+
+        body_text = (
+            soup.body.get_text(separator="\n", strip=True)
+            if soup.body
+            else "내용 없음"
+        )
+
+        content = body_text[:3000] if body_text else "내용 없음"
+
+        thumbnail = ""
+        og_image = soup.find("meta", property="og:image")
+        if og_image and og_image.get("content"):
+            thumbnail = og_image.get("content")
+
+        return title, content, thumbnail
+
+    except Exception as e:
+        print(f"웹 추출 에러: {e}")
+        return "제목 없음", "내용 없음", ""
 
 
-def extract_image_text(base64_image):
-    ocr_res = vision_client.chat.completions.create(
+def extract_image_text(base64_image: str):
+    response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
             {
@@ -221,7 +308,7 @@ def extract_image_text(base64_image):
                 "content": [
                     {
                         "type": "text",
-                        "text": "이미지 텍스트와 핵심 정보를 상세히 추출해줘.",
+                        "text": "이미지 안의 텍스트와 핵심 정보를 한국어로 상세히 추출해줘.",
                     },
                     {
                         "type": "image_url",
@@ -235,7 +322,7 @@ def extract_image_text(base64_image):
         temperature=0,
     )
 
-    return ocr_res.choices[0].message.content
+    return response.choices[0].message.content
 
 
 @app.post("/analyze")
@@ -243,35 +330,20 @@ def analyze_url(url: str):
     if "instagram.com" in url:
         title, content, thumbnail = get_instagram_data(url)
     else:
-        res = requests.get(
-            url,
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=10,
-        )
-        soup = BeautifulSoup(res.text, "html.parser")
-        title = soup.title.string if soup.title else "제목 없음"
-        content = soup.body.get_text()[:3000] if soup.body else "내용 없음"
-        thumbnail = ""
+        title, content, thumbnail = get_web_data(url)
 
-    summary, category, tags = get_ai_summary(content, use_pro=True)
+    summary, category, tags = get_ai_summary(content)
 
-    post_data = {
+    return {
+        "status": "ACTIVE",
+        "url": url,
         "title": title,
         "summary": summary,
         "category": category,
         "tags": tags,
         "thumbnail": thumbnail,
-        "url": url,
-        "status": "ACTIVE",
-        "isFavorite": False,
-        "isPinned": False,
-        "isRead": False,
-        "isDeleted": False,
-        "memo_text": "",
+        "originalText": content,
     }
-
-    save_to_firestore(post_data)
-    return {"status": "success"}
 
 
 @app.post("/analyze/image")
@@ -283,28 +355,20 @@ async def analyze_image(files: List[UploadFile] = File(...)):
         base64_image = base64.b64encode(contents).decode("utf-8")
 
         image_text = extract_image_text(base64_image)
-
         all_image_text += f"\n\n[이미지 {index}]\n{image_text}"
 
-    summary, category, tags = get_ai_summary(all_image_text, use_pro=True)
+    summary, category, tags = get_ai_summary(all_image_text)
 
-    post_data = {
+    return {
+        "status": "ACTIVE",
+        "url": "uploaded_image",
         "title": "이미지 분석 결과",
         "summary": summary,
         "category": category,
         "tags": tags,
         "thumbnail": "",
-        "url": "uploaded_file",
-        "status": "ACTIVE",
-        "isFavorite": False,
-        "isPinned": False,
-        "isRead": False,
-        "isDeleted": False,
-        "memo_text": "",
+        "originalText": all_image_text,
     }
-
-    save_to_firestore(post_data)
-    return {"status": "success"}
 
 
 @app.post("/analyze/complex")
@@ -318,7 +382,6 @@ async def analyze_complex(url: str, files: List[UploadFile] = File(...)):
         base64_image = base64.b64encode(contents).decode("utf-8")
 
         image_text = extract_image_text(base64_image)
-
         all_image_text += f"\n\n[이미지 {index}]\n{image_text}"
 
     combined = f"""
@@ -329,37 +392,18 @@ async def analyze_complex(url: str, files: List[UploadFile] = File(...)):
 {all_image_text}
 """
 
-    summary, category, tags = get_ai_summary(combined, use_pro=True)
+    summary, category, tags = get_ai_summary(combined)
 
-    post_data = {
+    return {
+        "status": "ACTIVE",
+        "url": url,
         "title": title,
         "summary": summary,
         "category": category,
         "tags": tags,
         "thumbnail": thumbnail,
-        "url": url,
-        "status": "ACTIVE",
-        "isFavorite": False,
-        "isPinned": False,
-        "isRead": False,
-        "isDeleted": False,
-        "memo_text": "",
+        "originalText": combined,
     }
-
-    save_to_firestore(post_data)
-    return {"status": "success"}
-
-
-@app.patch("/posts/{post_id}/status")
-def update_status(post_id: str, data: StatusUpdate):
-    update_dict = {
-        key: value
-        for key, value in data.dict().items()
-        if value is not None
-    }
-
-    db.collection("posts").document(post_id).update(update_dict)
-    return {"status": "success"}
 
 
 @app.get("/")
