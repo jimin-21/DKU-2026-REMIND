@@ -1,5 +1,6 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import requests
 from bs4 import BeautifulSoup
 import os
@@ -7,6 +8,8 @@ import re
 import json
 import base64
 from typing import Optional, List
+from pathlib import Path
+from uuid import uuid4
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -33,6 +36,11 @@ class CategoryUpdate(BaseModel):
 
 
 app = FastAPI()
+
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -299,6 +307,35 @@ def get_web_data(url: str):
         return "제목 없음", "내용 없음", ""
 
 
+def get_file_extension(filename: str):
+    ext = os.path.splitext(filename or "")[1].lower()
+
+    if ext in [".jpg", ".jpeg", ".png", ".webp"]:
+        return ext
+
+    return ".jpg"
+
+
+async def save_uploaded_image(file: UploadFile, request: Request):
+    contents = await file.read()
+
+    ext = get_file_extension(file.filename or "")
+    saved_filename = f"{uuid4().hex}{ext}"
+    saved_path = UPLOAD_DIR / saved_filename
+
+    with open(saved_path, "wb") as f:
+        f.write(contents)
+
+    base_url = str(request.base_url).rstrip("/")
+    image_url = f"{base_url}/uploads/{saved_filename}"
+
+    return {
+        "url": image_url,
+        "filename": saved_filename,
+        "bytes": contents,
+    }
+
+
 def extract_image_text(base64_image: str):
     response = client.chat.completions.create(
         model="gpt-4o",
@@ -323,6 +360,23 @@ def extract_image_text(base64_image: str):
     )
 
     return response.choices[0].message.content
+
+
+@app.post("/upload/images")
+async def upload_images(request: Request, files: List[UploadFile] = File(...)):
+    image_urls = []
+    file_names = []
+
+    for file in files:
+        saved = await save_uploaded_image(file, request)
+        image_urls.append(saved["url"])
+        file_names.append(saved["filename"])
+
+    return {
+        "status": "success",
+        "imageUrls": image_urls,
+        "fileNames": file_names,
+    }
 
 
 @app.post("/analyze")
@@ -373,7 +427,10 @@ async def analyze_image(files: List[UploadFile] = File(...)):
 
 @app.post("/analyze/complex")
 async def analyze_complex(url: str, files: List[UploadFile] = File(...)):
-    title, url_content, thumbnail = get_instagram_data(url)
+    if "instagram.com" in url:
+        title, url_content, thumbnail = get_instagram_data(url)
+    else:
+        title, url_content, thumbnail = get_web_data(url)
 
     all_image_text = ""
 

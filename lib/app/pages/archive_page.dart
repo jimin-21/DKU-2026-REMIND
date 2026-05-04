@@ -245,13 +245,13 @@ class _ArchivePageState extends State<ArchivePage> {
 
     if (summary.isNotEmpty) {
       return summary
-        .split('\n')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .map((e) => e.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), ''))
-        .where((e) => e.isNotEmpty)
-        .take(3)
-        .toList();
+          .split('\n')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .map((e) => e.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), ''))
+          .where((e) => e.isNotEmpty)
+          .take(3)
+          .toList();
     }
 
     if (url.isNotEmpty) {
@@ -291,6 +291,48 @@ class _ArchivePageState extends State<ArchivePage> {
     }
   }
 
+  List<String> getImageUrls(Map<String, dynamic> post) {
+    final List<String> result = [];
+
+    final rawImageUrls = post['imageUrls'];
+    if (rawImageUrls is List) {
+      result.addAll(
+        rawImageUrls
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty),
+      );
+    }
+
+    final rawImageUrlsSnake = post['image_urls'];
+    if (rawImageUrlsSnake is List) {
+      result.addAll(
+        rawImageUrlsSnake
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty),
+      );
+    }
+
+    final thumbnail = (post['thumbnail'] ?? '').toString().trim();
+    if (thumbnail.isNotEmpty) {
+      result.add(thumbnail);
+    }
+
+    return result.toSet().toList();
+  }
+
+  String normalizeImageUrl(String imageUrl) {
+    final url = imageUrl.trim();
+
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+
+    if (url.startsWith('/')) {
+      return 'http://127.0.0.1:8000$url';
+    }
+
+    return 'http://127.0.0.1:8000/$url';
+  }
 
   Color getCategoryChipColor(String category) {
     switch (category) {
@@ -315,6 +357,108 @@ class _ArchivePageState extends State<ArchivePage> {
     }
 
     return mainCategoryNames[dynamicIndex];
+  }
+
+  Widget buildThumbnail(String imageUrl) {
+    final fixedUrl = normalizeImageUrl(imageUrl);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        width: 116,
+        height: 116,
+        color: const Color(0xFFF3F4F4),
+        child: Image.network(
+          fixedUrl,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return const Center(
+              child: Icon(
+                Icons.image_not_supported_outlined,
+                size: 32,
+                color: AppColors.textDisabled,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget buildSummaryArea({
+    required List<String> summaryLines,
+    required List<String> imageUrls,
+  }) {
+    if (imageUrls.isEmpty) {
+      return Column(
+        children: summaryLines.map((line) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '• ',
+                  style: TextStyle(fontSize: 14),
+                ),
+                Expanded(
+                  child: Text(
+                    line,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 1.6,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.charcoal,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        buildThumbnail(imageUrls.first),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            children: summaryLines.map((line) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '• ',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    Expanded(
+                      child: Text(
+                        line,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.charcoal,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -482,6 +626,7 @@ class _ArchivePageState extends State<ArchivePage> {
                             final List<String> summaryLines =
                                 getSummaryLines(post);
                             final List<String> tags = getTags(post);
+                            final List<String> imageUrls = getImageUrls(post);
 
                             final Color cardBackgroundColor = isRead
                                 ? const Color(0xFFF6F6F6)
@@ -592,7 +737,10 @@ class _ArchivePageState extends State<ArchivePage> {
                                           ),
                                           onSelected: (value) async {
                                             if (value == 'pin') {
-                                              await togglePinnedStatus(id, isPinned);
+                                              await togglePinnedStatus(
+                                                id,
+                                                isPinned,
+                                              );
                                             } else if (value == 'collection') {
                                               await moveToCollection(id);
                                             } else if (value == 'delete') {
@@ -602,7 +750,11 @@ class _ArchivePageState extends State<ArchivePage> {
                                           itemBuilder: (context) => [
                                             PopupMenuItem(
                                               value: 'pin',
-                                              child: Text(isPinned ? '고정 해제' : '홈에 고정'),
+                                              child: Text(
+                                                isPinned
+                                                    ? '고정 해제'
+                                                    : '홈에 고정',
+                                              ),
                                             ),
                                             const PopupMenuItem(
                                               value: 'collection',
@@ -629,35 +781,9 @@ class _ArchivePageState extends State<ArchivePage> {
                                       ),
                                     ),
                                     const SizedBox(height: 16),
-                                    ...summaryLines.map(
-                                      (line) => Padding(
-                                        padding:
-                                            const EdgeInsets.only(bottom: 8),
-                                        child: Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              '• ',
-                                              style: TextStyle(fontSize: 14),
-                                            ),
-                                            Expanded(
-                                              child: Text(
-                                                line,
-                                                maxLines: 2,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  height: 1.6,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: AppColors.charcoal,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                    buildSummaryArea(
+                                      summaryLines: summaryLines,
+                                      imageUrls: imageUrls,
                                     ),
                                     const SizedBox(height: 14),
                                     const Divider(color: AppColors.divider),

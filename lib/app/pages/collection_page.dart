@@ -21,6 +21,7 @@ class _CollectionPageState extends State<CollectionPage> {
   String sortOrder = 'recent';
 
   final FirestoreService _firestoreService = FirestoreService();
+
   List<Map<String, dynamic>> collectedPosts = [];
   List<String> mainCategoryNames = [];
   bool isLoading = true;
@@ -236,6 +237,7 @@ class _CollectionPageState extends State<CollectionPage> {
     }
 
     final category = (post['category'] ?? '기타').toString();
+
     switch (category) {
       case '자기계발':
         return ['#아침루틴', '#습관'];
@@ -286,6 +288,143 @@ class _CollectionPageState extends State<CollectionPage> {
     }
 
     return category;
+  }
+
+  List<String> getImageUrls(Map<String, dynamic> post) {
+    final List<String> result = [];
+
+    final rawImageUrls = post['imageUrls'];
+    if (rawImageUrls is List) {
+      result.addAll(
+        rawImageUrls
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .where((e) => e != 'uploaded_image')
+            .where((e) => e != 'uploaded_file'),
+      );
+    }
+
+    final rawImageUrlsSnake = post['image_urls'];
+    if (rawImageUrlsSnake is List) {
+      result.addAll(
+        rawImageUrlsSnake
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .where((e) => e != 'uploaded_image')
+            .where((e) => e != 'uploaded_file'),
+      );
+    }
+
+    return result.toSet().toList();
+  }
+
+  String normalizeImageUrl(String imageUrl) {
+    final url = imageUrl.trim();
+
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+
+    if (url.startsWith('/')) {
+      return 'http://127.0.0.1:8000$url';
+    }
+
+    return 'http://127.0.0.1:8000/$url';
+  }
+
+  Widget buildThumbnail(String imageUrl) {
+    final fixedUrl = normalizeImageUrl(imageUrl);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        width: 116,
+        height: 116,
+        child: Image.network(
+          fixedUrl,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget buildSummaryArea({
+    required List<String> summaryLines,
+    required List<String> imageUrls,
+  }) {
+    if (imageUrls.isEmpty) {
+      return Column(
+        children: summaryLines.map((line) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '• ',
+                  style: TextStyle(fontSize: 14),
+                ),
+                Expanded(
+                  child: Text(
+                    line,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 1.6,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.charcoal,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        buildThumbnail(imageUrls.first),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            children: summaryLines.map((line) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '• ',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    Expanded(
+                      child: Text(
+                        line,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          height: 1.6,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.charcoal,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
   }
 
   String? getSelectedMainCategoryName() {
@@ -483,6 +622,7 @@ class _CollectionPageState extends State<CollectionPage> {
                             final List<String> summaryLines =
                                 getSummaryLines(post);
                             final List<String> tags = getTags(post);
+                            final List<String> imageUrls = getImageUrls(post);
 
                             return GestureDetector(
                               onTap: () {
@@ -617,34 +757,9 @@ class _CollectionPageState extends State<CollectionPage> {
                                       ),
                                     ),
                                     const SizedBox(height: 18),
-                                    ...summaryLines.map(
-                                      (line) => Padding(
-                                        padding:
-                                            const EdgeInsets.only(bottom: 10),
-                                        child: Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              '• ',
-                                              style: TextStyle(fontSize: 14),
-                                            ),
-                                            Expanded(
-                                              child: Text(
-                                                line,
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  height: 1.6,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: AppColors.charcoal,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                    buildSummaryArea(
+                                      summaryLines: summaryLines,
+                                      imageUrls: imageUrls,
                                     ),
                                     const SizedBox(height: 12),
                                     const Divider(color: AppColors.divider),

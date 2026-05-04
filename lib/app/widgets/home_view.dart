@@ -214,14 +214,14 @@ class _HomeViewState extends State<HomeView> {
     final url = (post['url'] ?? '').toString().trim();
 
     if (summary.isNotEmpty) {
-return summary
-    .split('\n')
-    .map((e) => e.trim())
-    .where((e) => e.isNotEmpty)
-    .map((e) => e.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), ''))
-    .where((e) => e.isNotEmpty)
-    .take(3)
-    .toList();
+      return summary
+          .split('\n')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .map((e) => e.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), ''))
+          .where((e) => e.isNotEmpty)
+          .take(3)
+          .toList();
     }
 
     if (url.isNotEmpty) {
@@ -286,6 +286,48 @@ return summary
     return category;
   }
 
+  List<String> getImageUrls(Map<String, dynamic> post) {
+    final List<String> result = [];
+
+    final rawImageUrls = post['imageUrls'];
+    if (rawImageUrls is List) {
+      result.addAll(
+        rawImageUrls
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .where((e) => e != 'uploaded_image')
+            .where((e) => e != 'uploaded_file'),
+      );
+    }
+
+    final rawImageUrlsSnake = post['image_urls'];
+    if (rawImageUrlsSnake is List) {
+      result.addAll(
+        rawImageUrlsSnake
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .where((e) => e != 'uploaded_image')
+            .where((e) => e != 'uploaded_file'),
+      );
+    }
+
+    return result.toSet().toList();
+  }
+
+  String normalizeImageUrl(String imageUrl) {
+    final url = imageUrl.trim();
+
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+
+    if (url.startsWith('/')) {
+      return 'http://127.0.0.1:8000$url';
+    }
+
+    return 'http://127.0.0.1:8000/$url';
+  }
+
   Color getCategoryChipColor(String category) {
     switch (category) {
       case '자기계발':
@@ -299,6 +341,105 @@ return summary
       default:
         return const Color(0xFFF1F1F1);
     }
+  }
+
+  Widget buildThumbnail(String imageUrl) {
+    final fixedUrl = normalizeImageUrl(imageUrl);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        width: 116,
+        height: 116,
+        child: Image.network(
+          fixedUrl,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget buildSummaryArea({
+    required List<String> summaryLines,
+    required List<String> imageUrls,
+  }) {
+    if (imageUrls.isEmpty) {
+      return Column(
+        children: summaryLines.map(
+          (line) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '• ',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  Expanded(
+                    child: Text(
+                      line,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        height: 1.6,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.charcoal,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ).toList(),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        buildThumbnail(imageUrls.first),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            children: summaryLines.map(
+              (line) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '• ',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      Expanded(
+                        child: Text(
+                          line,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            height: 1.6,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.charcoal,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ).toList(),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget buildPostCard(
@@ -315,6 +456,7 @@ return summary
     final String title = getDisplayTitle(post);
     final List<String> summaryLines = getSummaryLines(post);
     final List<String> tags = getTags(post);
+    final List<String> imageUrls = getImageUrls(post);
 
     final Color cardBackgroundColor =
         isRead ? const Color(0xFFF6F6F6) : AppColors.surface;
@@ -387,13 +529,9 @@ return summary
                       await toggleReadStatus(id, isRead);
                     },
                     child: Icon(
-                      isRead
-                          ? Icons.check_circle
-                          : Icons.check_circle_outline,
+                      isRead ? Icons.check_circle : Icons.check_circle_outline,
                       size: 20,
-                      color: isRead
-                          ? AppColors.success
-                          : AppColors.textDisabled,
+                      color: isRead ? AppColors.success : AppColors.textDisabled,
                     ),
                   ),
                 ],
@@ -455,32 +593,9 @@ return summary
               ),
             ),
             const SizedBox(height: 16),
-            ...summaryLines.map(
-              (line) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '• ',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                    Expanded(
-                      child: Text(
-                        line,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          height: 1.6,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.charcoal,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            buildSummaryArea(
+              summaryLines: summaryLines,
+              imageUrls: imageUrls,
             ),
             const SizedBox(height: 14),
             const Divider(color: AppColors.divider),

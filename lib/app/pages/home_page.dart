@@ -78,10 +78,7 @@ class _HomePageState extends State<HomePage> {
 
       final category = (post['category'] ?? '').toString().trim();
 
-      // 이미 메인 카테고리면 추천 대상 아님
       if (mainCategoryNames.contains(category)) continue;
-
-      // 기타인 글만 태그 기반으로 추천
       if (category != '기타') continue;
 
       final rawTags = post['tags'];
