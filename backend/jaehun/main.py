@@ -15,454 +15,125 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 load_dotenv()
-
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-
-class StatusUpdate(BaseModel):
-    isFavorite: Optional[bool] = None
-    isPinned: Optional[bool] = None
-    isRead: Optional[bool] = None
-    isDeleted: Optional[bool] = None
-
-
-class MemoUpdate(BaseModel):
-    memo_text: str
-
-
-class CategoryUpdate(BaseModel):
-    category: str
-
-
 app = FastAPI()
 
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
-
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
-
+# 1. CORS 설정 수정 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,
+    allow_credentials=True, # 쿠키/인증 헤더 허용
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-
-def make_fallback_summary(content: str):
-    lines = [
-        line.strip()
-        for line in content.splitlines()
-        if line.strip()
-    ]
-
-    cleaned = []
-
-    for line in lines:
-        if line.startswith("#"):
-            continue
-
-        line = (
-            line.replace("👉", "")
-            .replace("✔", "")
-            .replace("💡", "")
-            .replace("💌", "")
-            .strip()
-        )
-
-        if line:
-            cleaned.append(line)
-
-    if not cleaned:
-        return "요약할 수 있는 본문이 부족합니다."
-
-    picked = cleaned[:6]
-
-    return "\n".join([f"• {line}" for line in picked])
-
-
-def make_fallback_tags(content: str):
-    tags = []
-
-    if any(word in content for word in ["낮잠", "졸릴", "집중", "커피냅"]):
-        tags.append("집중")
-    if "괄사" in content:
-        tags.append("괄사")
-    if any(word in content for word in ["사탕", "캔디", "박하"]):
-        tags.append("간식")
-    if any(word in content for word in ["아이드롭", "렌즈", "눈", "피로"]):
-        tags.append("아이케어")
-    if any(word in content for word in ["쿠팡", "추천", "제품", "필수템"]):
-        tags.append("추천템")
-    if "대학생" in content:
-        tags.append("대학생")
-    if any(word in content for word in ["맛집", "카페", "여행", "숙소"]):
-        tags.append("장소")
-    if any(word in content for word in ["운동", "헬스", "러닝", "다이어트"]):
-        tags.append("운동")
-
-    if not tags:
-        tags = ["기록"]
-
-    return tags[:3]
-
-
-def guess_category(content: str):
-    if any(word in content for word in ["운동", "헬스", "러닝", "다이어트", "필라테스"]):
-        return "운동"
-
-    if any(word in content for word in ["카페", "맛집", "여행", "숙소", "장소", "전시"]):
-        return "장소"
-
-    if any(
-        word in content
-        for word in ["쿠팡", "구매", "제품", "추천템", "사탕", "캔디", "아이드롭", "괄사", "필수템"]
-    ):
-        return "쇼핑"
-
-    if any(word in content for word in ["공부", "집중", "습관", "생산성", "낮잠", "커피냅"]):
-        return "자기계발"
-
-    return "기타"
-
-
+# --- [AI 분석 핵심 함수: 제목 생성 기능 추가] ---
 def get_ai_summary(content: str):
     if not content or content == "내용 없음" or len(content.strip()) < 10:
-        return "정보를 추출할 본문이 부족합니다.", "기타", ["내용부족"]
+        return "제목 없음", "정보를 추출할 본문이 부족합니다.", "기타", ["내용부족"]
 
     try:
+        # [수정] AI에게 '제목(title)'까지 지으라고 명시적으로 지시합니다.
         prompt = f"""
-너는 콘텐츠 분석 전문가야.
-아래 본문을 한국어로 분석해서 반드시 JSON만 반환해.
-
-규칙:
-1. summary는 줄바꿈이 있는 리스트 형식으로 작성해.
-2. summary의 각 줄은 반드시 "• 항목: 설명" 형식으로 작성해.
-3. category는 장소, 자기계발, 쇼핑, 운동, 기타 중 하나만 선택해.
-4. tags는 핵심 키워드 2~3개 배열로 작성해.
-5. 코드블록 없이 JSON 객체만 반환해.
-
-본문:
-{content[:4000]}
-
-반환 형식:
-{{
-  "summary": "• 항목: 설명\\n• 항목: 설명",
-  "category": "기타",
-  "tags": ["키워드1", "키워드2"]
-}}
-"""
-
+        너는 콘텐츠 분석 전문가야. 아래 본문을 한국어로 분석해서 반드시 JSON만 반환해.
+        [규칙]
+        1. title: 본문 내용을 대표하는 매력적인 제목 (15자 내외)
+        2. summary: 핵심 내용을 "• 항목: 설명" 형식의 리스트로 작성.
+        3. category: 장소, 자기계발, 쇼핑, 운동, 기타 중 하나만 선택.
+        4. tags: 키워드 2~3개 배열.
+        본문: {content[:4000]}
+        """
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "너는 반드시 JSON 객체만 반환하는 콘텐츠 분석기야.",
-                },
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
+            messages=[{"role": "system", "content": "JSON 출력기"}, {"role": "user", "content": prompt}],
             temperature=0,
-            response_format={"type": "json_object"},
+            response_format={"type": "json_object"}
         )
+        res = json.loads(response.choices[0].message.content.strip())
+        return res.get("title", "분석된 제목"), res.get("summary", ""), res.get("category", "기타"), res.get("tags", [])
+    except:
+        return "분석 실패", "내용 요약 중 에러 발생", "기타", ["에러"]
 
-        raw = response.choices[0].message.content.strip()
-        result = json.loads(raw)
-
-        summary_text = str(result.get("summary", "")).strip()
-        ai_category = str(result.get("category", "기타")).strip()
-        tags = result.get("tags", [])
-
-        allowed_categories = ["장소", "자기계발", "쇼핑", "운동", "기타"]
-
-        if ai_category not in allowed_categories:
-            ai_category = guess_category(content)
-
-        if not isinstance(tags, list):
-            tags = []
-
-        final_tags = [
-            str(tag).strip()
-            for tag in tags
-            if str(tag).strip()
-        ][:3]
-
-        if not summary_text:
-            summary_text = make_fallback_summary(content)
-
-        if not final_tags:
-            final_tags = make_fallback_tags(content)
-
-        if not ai_category:
-            ai_category = guess_category(content)
-
-        return summary_text, ai_category, final_tags
-
-    except Exception as e:
-        print(f"요약 에러: {e}")
-
-        fallback_summary = make_fallback_summary(content)
-        fallback_category = guess_category(content)
-        fallback_tags = make_fallback_tags(content)
-
-        return fallback_summary, fallback_category, fallback_tags
-
-
+# --- [기존 데이터 추출 로직 유지] ---
 def get_instagram_data(url: str):
-    api_url = "https://instagram-scraper-stable-api.p.rapidapi.com/get_media_data_v2.php"
-
+    headers = {"x-rapidapi-key": RAPIDAPI_KEY or "", "x-rapidapi-host": "instagram-scraper-stable-api.p.rapidapi.com"}
     match = re.search(r"/(?:p|reel|reels)/([A-Za-z0-9_-]+)", url)
     media_code = match.group(1) if match else ""
-
-    headers = {
-        "x-rapidapi-key": RAPIDAPI_KEY or "",
-        "x-rapidapi-host": "instagram-scraper-stable-api.p.rapidapi.com",
-    }
-
     try:
-        response = requests.get(
-            api_url,
-            headers=headers,
-            params={"media_code": media_code},
-            timeout=10,
-        )
-
-        data = response.json()
-        items = data.get("data") or data.get("items") or [data]
-
-        if isinstance(items, list) and items:
-            items = items[0]
-
-        content = "내용 없음"
-        thumbnail = ""
-
-        if isinstance(items, dict):
-            content = (
-                items.get("edge_media_to_caption", {})
-                .get("edges", [{}])[0]
-                .get("node", {})
-                .get("text")
-                or items.get("caption", {}).get("text")
-                or items.get("caption_text")
-                or items.get("text")
-                or "내용 없음"
-            )
-
-            thumbnail = (
-                items.get("display_url")
-                or items.get("thumbnail_url")
-                or ""
-            )
-
+        res = requests.get("https://instagram-scraper-stable-api.p.rapidapi.com/get_media_data_v2.php", headers=headers, params={"media_code": media_code}, timeout=10).json()
+        item = (res.get("data") or res.get("items") or [res])[0]
+        content = item.get("edge_media_to_caption", {}).get("edges", [{}])[0].get("node", {}).get("text") or item.get("caption", {}).get("text") or "내용 없음"
+        thumbnail = item.get("display_url") or item.get("thumbnail_url") or ""
         return "Instagram 콘텐츠", content, thumbnail
-
-    except Exception as e:
-        print(f"Instagram 추출 에러: {e}")
-        return "Instagram 콘텐츠", "내용 없음", ""
-
+    except: return "Instagram 콘텐츠", "내용 없음", ""
 
 def get_web_data(url: str):
     try:
-        response = requests.get(
-            url,
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=10,
-        )
-
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        title = (
-            soup.title.string.strip()
-            if soup.title and soup.title.string
-            else "제목 없음"
-        )
-
-        for tag in soup(["script", "style", "noscript"]):
-            tag.decompose()
-
-        body_text = (
-            soup.body.get_text(separator="\n", strip=True)
-            if soup.body
-            else "내용 없음"
-        )
-
-        content = body_text[:3000] if body_text else "내용 없음"
-
-        thumbnail = ""
-        og_image = soup.find("meta", property="og:image")
-        if og_image and og_image.get("content"):
-            thumbnail = og_image.get("content")
-
-        return title, content, thumbnail
-
-    except Exception as e:
-        print(f"웹 추출 에러: {e}")
-        return "제목 없음", "내용 없음", ""
-
-
-def get_file_extension(filename: str):
-    ext = os.path.splitext(filename or "")[1].lower()
-
-    if ext in [".jpg", ".jpeg", ".png", ".webp"]:
-        return ext
-
-    return ".jpg"
-
-
-async def save_uploaded_image(file: UploadFile, request: Request):
-    contents = await file.read()
-
-    ext = get_file_extension(file.filename or "")
-    saved_filename = f"{uuid4().hex}{ext}"
-    saved_path = UPLOAD_DIR / saved_filename
-
-    with open(saved_path, "wb") as f:
-        f.write(contents)
-
-    base_url = str(request.base_url).rstrip("/")
-    image_url = f"{base_url}/uploads/{saved_filename}"
-
-    return {
-        "url": image_url,
-        "filename": saved_filename,
-        "bytes": contents,
-    }
-
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+        title = soup.title.string.strip() if soup.title else "제목 없음"
+        body = soup.body.get_text(separator="\n", strip=True)[:3000]
+        og = soup.find("meta", property="og:image")
+        return title, body, (og.get("content") if og else "")
+    except: return "제목 없음", "내용 없음", ""
 
 def extract_image_text(base64_image: str):
-    response = client.chat.completions.create(
+    res = client.chat.completions.create(
         model="gpt-4o",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "이미지 안의 텍스트와 핵심 정보를 한국어로 상세히 추출해줘.",
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}"
-                        },
-                    },
-                ],
-            }
-        ],
-        temperature=0,
+        messages=[{"role": "user", "content": [{"type": "text", "text": "텍스트 추출"}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}]}],
+        temperature=0
     )
+    return res.choices[0].message.content
 
-    return response.choices[0].message.content
-
-
-@app.post("/upload/images")
-async def upload_images(request: Request, files: List[UploadFile] = File(...)):
-    image_urls = []
-    file_names = []
-
-    for file in files:
-        saved = await save_uploaded_image(file, request)
-        image_urls.append(saved["url"])
-        file_names.append(saved["filename"])
-
-    return {
-        "status": "success",
-        "imageUrls": image_urls,
-        "fileNames": file_names,
-    }
-
+# --- [API 엔드포인트: 요청 규격 반영] ---
 
 @app.post("/analyze")
 def analyze_url(url: str):
-    if "instagram.com" in url:
-        title, content, thumbnail = get_instagram_data(url)
-    else:
-        title, content, thumbnail = get_web_data(url)
-
-    summary, category, tags = get_ai_summary(content)
-
-    return {
-        "status": "ACTIVE",
-        "url": url,
-        "title": title,
-        "summary": summary,
-        "category": category,
-        "tags": tags,
-        "thumbnail": thumbnail,
-        "originalText": content,
-    }
-
+    _, content, thumb = get_instagram_data(url) if "instagram.com" in url else get_web_data(url)
+    ai_t, summ, cat, tags = get_ai_summary(content)
+    # 응답 필드 통일: title, summary, category, tags, thumbnail, originalText
+    return {"status": "ACTIVE", "url": url, "title": ai_t, "summary": summ, "category": cat, "tags": tags, "thumbnail": thumb, "originalText": content}
 
 @app.post("/analyze/image")
 async def analyze_image(files: List[UploadFile] = File(...)):
-    all_image_text = ""
-
-    for index, file in enumerate(files, start=1):
-        contents = await file.read()
-        base64_image = base64.b64encode(contents).decode("utf-8")
-
-        image_text = extract_image_text(base64_image)
-        all_image_text += f"\n\n[이미지 {index}]\n{image_text}"
-
-    summary, category, tags = get_ai_summary(all_image_text)
-
-    return {
-        "status": "ACTIVE",
-        "url": "uploaded_image",
-        "title": "이미지 분석 결과",
-        "summary": summary,
-        "category": category,
-        "tags": tags,
-        "thumbnail": "",
-        "originalText": all_image_text,
-    }
-
+    all_text = ""
+    for i, file in enumerate(files, 1):
+        base64_img = base64.b64encode(await file.read()).decode("utf-8")
+        all_text += f"\n[이미지 {i}]\n{extract_image_text(base64_img)}"
+    
+    # [수정] 고정 제목 대신 AI가 텍스트를 기반으로 제목을 지어줍니다.
+    ai_t, summ, cat, tags = get_ai_summary(all_text)
+    return {"status": "ACTIVE", "title": ai_t, "summary": summ, "category": cat, "tags": tags, "originalText": all_text}
 
 @app.post("/analyze/complex")
 async def analyze_complex(url: str, files: List[UploadFile] = File(...)):
-    if "instagram.com" in url:
-        title, url_content, thumbnail = get_instagram_data(url)
-    else:
-        title, url_content, thumbnail = get_web_data(url)
+    _, url_c, thumb = get_instagram_data(url) if "instagram.com" in url else get_web_data(url)
+    img_text = ""
+    for i, file in enumerate(files, 1):
+        base64_img = base64.b64encode(await file.read()).decode("utf-8")
+        img_text += f"\n[이미지 {i}]\n{extract_image_text(base64_img)}"
+    
+    combined = f"[링크 정보]\n{url_c}\n\n[이미지 텍스트]\n{img_text}"
+    ai_t, summ, cat, tags = get_ai_summary(combined)
+    return {"status": "ACTIVE", "url": url, "title": ai_t, "summary": summ, "category": cat, "tags": tags, "thumbnail": thumb, "originalText": combined}
 
-    all_image_text = ""
-
-    for index, file in enumerate(files, start=1):
+@app.post("/upload/images")
+async def upload_images(request: Request, files: List[UploadFile] = File(...)):
+    urls = []
+    for file in files:
         contents = await file.read()
-        base64_image = base64.b64encode(contents).decode("utf-8")
-
-        image_text = extract_image_text(base64_image)
-        all_image_text += f"\n\n[이미지 {index}]\n{image_text}"
-
-    combined = f"""
-[링크 본문]
-{url_content}
-
-[이미지 내 텍스트]
-{all_image_text}
-"""
-
-    summary, category, tags = get_ai_summary(combined)
-
-    return {
-        "status": "ACTIVE",
-        "url": url,
-        "title": title,
-        "summary": summary,
-        "category": category,
-        "tags": tags,
-        "thumbnail": thumbnail,
-        "originalText": combined,
-    }
-
+        filename = f"{uuid4().hex}{os.path.splitext(file.filename or '')[1].lower() or '.jpg'}"
+        with open(UPLOAD_DIR / filename, "wb") as f: f.write(contents)
+        urls.append(f"{str(request.base_url).rstrip('/')}/uploads/{filename}")
+    return {"status": "success", "imageUrls": urls}
 
 @app.get("/")
-def health():
-    return {"status": "ok"}
+def health(): return {"status": "ok"}
