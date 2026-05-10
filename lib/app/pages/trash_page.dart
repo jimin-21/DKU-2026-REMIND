@@ -150,6 +150,8 @@ class _TrashPageState extends State<TrashPage> {
           .split('\n')
           .map((e) => e.trim())
           .where((e) => e.isNotEmpty)
+          .map((e) => e.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), ''))
+          .where((e) => e.isNotEmpty)
           .take(3)
           .toList();
     }

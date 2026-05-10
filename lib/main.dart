@@ -20,7 +20,7 @@ class ReSeeApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      initialRoute: AppRoutes.home,
+      initialRoute: AppRoutes.authGate,
       onGenerateRoute: AppRoutes.onGenerateRoute,
     );
   }

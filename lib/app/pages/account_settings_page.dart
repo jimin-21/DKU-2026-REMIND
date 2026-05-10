@@ -1,4 +1,7 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../routes/app_routes.dart';
+import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radii.dart';
 
@@ -10,34 +13,49 @@ class AccountSettingsPage extends StatefulWidget {
 }
 
 class _AccountSettingsPageState extends State<AccountSettingsPage> {
-  final TextEditingController nicknameController =
-      TextEditingController(text: '사용자님');
-  final TextEditingController emailController =
-      TextEditingController(text: 'user@example.com');
-  final TextEditingController passwordController =
-      TextEditingController(text: 'password123');
+  final AuthService _authService = AuthService();
+
+  late TextEditingController nicknameController;
+  late TextEditingController emailController;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final User? user = FirebaseAuth.instance.currentUser;
+
+    nicknameController = TextEditingController(text: '사용자님');
+    emailController = TextEditingController(
+      text: user?.email ?? '로그인 정보 없음',
+    );
+  }
 
   @override
   void dispose() {
     nicknameController.dispose();
     emailController.dispose();
-    passwordController.dispose();
     super.dispose();
   }
 
   void handleSave() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('계정 정보가 저장되었습니다.'),
+        content: Text('계정 정보 저장 기능은 나중에 연결할 수 있어요.'),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
-  void handleLogout() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('로그아웃 기능은 나중에 연결할 수 있어요.'),
-      ),
+  Future<void> handleLogout() async {
+    await _authService.signOut();
+
+    if (!mounted) return;
+
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      AppRoutes.authGate,
+      (route) => false,
     );
   }
 
@@ -56,9 +74,12 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
+
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('회원탈퇴 기능은 나중에 연결할 수 있어요.'),
+                    duration: Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
                   ),
                 );
               },
@@ -90,7 +111,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   Widget buildTextField({
     required String label,
     required TextEditingController controller,
-    bool obscureText = false,
+    bool readOnly = false,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -108,10 +129,12 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           const SizedBox(height: 8),
           TextField(
             controller: controller,
-            obscureText: obscureText,
+            readOnly: readOnly,
             decoration: InputDecoration(
               filled: true,
-              fillColor: AppColors.surface,
+              fillColor: readOnly
+                  ? const Color(0xFFF3F4F4)
+                  : AppColors.surface,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
                 vertical: 16,
@@ -140,6 +163,12 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final String emailText = emailController.text;
+    final String profileLetter =
+        emailText.isNotEmpty && emailText != '로그인 정보 없음'
+            ? emailText[0].toUpperCase()
+            : 'MY';
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -184,10 +213,10 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                     color: AppColors.peachDust,
                     shape: BoxShape.circle,
                   ),
-                  child: const Center(
+                  child: Center(
                     child: Text(
-                      'MY',
-                      style: TextStyle(
+                      profileLetter,
+                      style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
                         fontSize: 28,
@@ -196,12 +225,13 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                   ),
                 ),
                 const SizedBox(width: 16),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    '프로필 사진 기능은\n나중에 로그인 기능과 함께 연결할 수 있어요.',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 14,
+                    emailText,
+                    style: const TextStyle(
+                      color: AppColors.charcoal,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
                       height: 1.5,
                     ),
                   ),
@@ -233,11 +263,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                 buildTextField(
                   label: '이메일',
                   controller: emailController,
-                ),
-                buildTextField(
-                  label: '비밀번호',
-                  controller: passwordController,
-                  obscureText: true,
+                  readOnly: true,
                 ),
                 const SizedBox(height: 8),
                 SizedBox(

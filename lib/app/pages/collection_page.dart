@@ -21,6 +21,7 @@ class _CollectionPageState extends State<CollectionPage> {
   String sortOrder = 'recent';
 
   final FirestoreService _firestoreService = FirestoreService();
+
   List<Map<String, dynamic>> collectedPosts = [];
   List<String> mainCategoryNames = [];
   bool isLoading = true;
@@ -137,7 +138,7 @@ class _CollectionPageState extends State<CollectionPage> {
     } else if (tab == 1) {
       Navigator.pushNamed(context, AppRoutes.home);
     } else if (tab == 2) {
-      Navigator.pushNamed(context, AppRoutes.collection);
+      loadCollectedPosts();
     }
   }
 
@@ -199,6 +200,11 @@ class _CollectionPageState extends State<CollectionPage> {
     return '제목 없음';
   }
 
+  bool isNumberedLine(String line) {
+    final numbers = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+    return numbers.any((number) => line.trim().startsWith(number));
+  }
+
   List<String> getSummaryLines(Map<String, dynamic> post) {
     final summary = (post['summary'] ?? '').toString().trim();
     final url = (post['url'] ?? '').toString().trim();
@@ -207,6 +213,14 @@ class _CollectionPageState extends State<CollectionPage> {
       return summary
           .split('\n')
           .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .map((e) {
+            if (isNumberedLine(e)) {
+              return e;
+            }
+
+            return e.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), '');
+          })
           .where((e) => e.isNotEmpty)
           .take(3)
           .toList();
@@ -234,6 +248,7 @@ class _CollectionPageState extends State<CollectionPage> {
     }
 
     final category = (post['category'] ?? '기타').toString();
+
     switch (category) {
       case '자기계발':
         return ['#아침루틴', '#습관'];
@@ -263,6 +278,172 @@ class _CollectionPageState extends State<CollectionPage> {
     }
   }
 
+  String getEffectiveCategory(Map<String, dynamic> post) {
+    final category = (post['category'] ?? '기타').toString().trim();
+
+    if (category != '기타') return category;
+
+    final tags = post['tags'];
+
+    if (tags is List && tags.isNotEmpty) {
+      final firstTag = tags.first.toString().replaceAll('#', '').trim();
+
+      final knownCategories = {
+        ...mainCategoryNames,
+        '음악',
+      };
+
+      if (knownCategories.contains(firstTag)) {
+        return firstTag;
+      }
+    }
+
+    return category;
+  }
+
+  List<String> getImageUrls(Map<String, dynamic> post) {
+    final List<String> result = [];
+
+    final rawImageUrls = post['imageUrls'];
+    if (rawImageUrls is List) {
+      result.addAll(
+        rawImageUrls
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .where((e) => e != 'uploaded_image')
+            .where((e) => e != 'uploaded_file'),
+      );
+    }
+
+    final rawImageUrlsSnake = post['image_urls'];
+    if (rawImageUrlsSnake is List) {
+      result.addAll(
+        rawImageUrlsSnake
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .where((e) => e != 'uploaded_image')
+            .where((e) => e != 'uploaded_file'),
+      );
+    }
+
+    return result.toSet().toList();
+  }
+
+  String normalizeImageUrl(String imageUrl) {
+    final url = imageUrl.trim();
+
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+
+    if (url.startsWith('/')) {
+      return 'http://127.0.0.1:8000$url';
+    }
+
+    return 'http://127.0.0.1:8000/$url';
+  }
+
+  Widget buildThumbnail(String imageUrl) {
+    final fixedUrl = normalizeImageUrl(imageUrl);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        width: 116,
+        height: 116,
+        child: Image.network(
+          fixedUrl,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget buildSummaryLine(String line, {double height = 1.6}) {
+    final trimmed = line.trim();
+
+    if (isNumberedLine(trimmed)) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            trimmed,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 14,
+              height: height,
+              fontWeight: FontWeight.w500,
+              color: AppColors.charcoal,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final cleaned = trimmed.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), '');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '• ',
+            style: TextStyle(fontSize: 14),
+          ),
+          Expanded(
+            child: Text(
+              cleaned,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                height: height,
+                fontWeight: FontWeight.w500,
+                color: AppColors.charcoal,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildSummaryArea({
+    required List<String> summaryLines,
+    required List<String> imageUrls,
+  }) {
+    if (imageUrls.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: summaryLines
+            .map((line) => buildSummaryLine(line))
+            .toList(),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        buildThumbnail(imageUrls.first),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: summaryLines
+                .map((line) => buildSummaryLine(line))
+                .toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
   String? getSelectedMainCategoryName() {
     final int dynamicIndex = categoryTab - AppCategories.fixedTabs.length;
 
@@ -282,7 +463,7 @@ class _CollectionPageState extends State<CollectionPage> {
       final query = searchQuery.toLowerCase();
       final isFavorite = post['isFavorite'] ?? false;
       final isDeleted = post['isDeleted'] ?? false;
-      final category = (post['category'] ?? '').toString();
+      final category = getEffectiveCategory(post);
 
       if (isDeleted == true) return false;
 
@@ -451,14 +632,14 @@ class _CollectionPageState extends State<CollectionPage> {
                             final String id = post['id'] ?? '';
                             final bool isFavorite = post['isFavorite'] ?? false;
                             final bool isPinned = post['isPinned'] ?? false;
-                            final String category =
-                                (post['category'] ?? '기타').toString();
+                            final String category = getEffectiveCategory(post);
                             final String dateText =
                                 formatDate(post['createdAt']);
                             final String title = getDisplayTitle(post);
                             final List<String> summaryLines =
                                 getSummaryLines(post);
                             final List<String> tags = getTags(post);
+                            final List<String> imageUrls = getImageUrls(post);
 
                             return GestureDetector(
                               onTap: () {
@@ -593,34 +774,9 @@ class _CollectionPageState extends State<CollectionPage> {
                                       ),
                                     ),
                                     const SizedBox(height: 18),
-                                    ...summaryLines.map(
-                                      (line) => Padding(
-                                        padding:
-                                            const EdgeInsets.only(bottom: 10),
-                                        child: Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              '• ',
-                                              style: TextStyle(fontSize: 14),
-                                            ),
-                                            Expanded(
-                                              child: Text(
-                                                line,
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  height: 1.6,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: AppColors.charcoal,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                    buildSummaryArea(
+                                      summaryLines: summaryLines,
+                                      imageUrls: imageUrls,
                                     ),
                                     const SizedBox(height: 12),
                                     const Divider(color: AppColors.divider),
@@ -661,7 +817,7 @@ class _CollectionPageState extends State<CollectionPage> {
                                         const Row(
                                           children: [
                                             Text(
-                                              '원본 보기',
+                                              '상세 보기',
                                               style: TextStyle(
                                                 fontSize: 14,
                                                 color:

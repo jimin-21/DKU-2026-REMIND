@@ -34,16 +34,30 @@ class _HomeViewState extends State<HomeView> {
   }
 
   Future<void> loadPosts() async {
-    final data = await _firestoreService.getPosts();
+    try {
+      final data = await _firestoreService.getPosts();
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      posts = data.where((post) => (post['isDeleted'] ?? false) == false).toList();
-      isLoading = false;
-    });
+      setState(() {
+        posts = data
+            .where((post) => (post['isDeleted'] ?? false) == false)
+            .toList();
+        isLoading = false;
+      });
 
-    refreshRandomPosts();
+      refreshRandomPosts();
+    } catch (e) {
+      print('HomeView loadPosts error: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        posts = [];
+        randomPosts = [];
+        isLoading = false;
+      });
+    }
   }
 
   Future<void> togglePinnedStatus(String id, bool currentValue) async {
@@ -81,7 +95,7 @@ class _HomeViewState extends State<HomeView> {
     final title = (post['title'] ?? '').toString().toLowerCase();
     final summary = (post['summary'] ?? '').toString().toLowerCase();
     final url = (post['url'] ?? '').toString().toLowerCase();
-    final category = (post['category'] ?? '').toString().toLowerCase();
+    final category = getEffectiveCategory(post).toLowerCase();
     final memo = (post['memo'] ?? '').toString().toLowerCase();
 
     final tags = (post['tags'] is List)
@@ -195,6 +209,11 @@ class _HomeViewState extends State<HomeView> {
     return '제목 없음';
   }
 
+  bool isNumberedLine(String line) {
+    final numbers = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+    return numbers.any((number) => line.trim().startsWith(number));
+  }
+
   List<String> getSummaryLines(Map<String, dynamic> post) {
     final summary = (post['summary'] ?? '').toString().trim();
     final url = (post['url'] ?? '').toString().trim();
@@ -203,6 +222,14 @@ class _HomeViewState extends State<HomeView> {
       return summary
           .split('\n')
           .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .map((e) {
+            if (isNumberedLine(e)) {
+              return e;
+            }
+
+            return e.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), '');
+          })
           .where((e) => e.isNotEmpty)
           .take(3)
           .toList();
@@ -244,6 +271,74 @@ class _HomeViewState extends State<HomeView> {
     }
   }
 
+  String getEffectiveCategory(Map<String, dynamic> post) {
+    final category = (post['category'] ?? '기타').toString().trim();
+
+    if (category != '기타') return category;
+
+    final tags = post['tags'];
+
+    if (tags is List && tags.isNotEmpty) {
+      final firstTag = tags.first.toString().replaceAll('#', '').trim();
+
+      final knownCategories = {
+        '자기계발',
+        '운동',
+        '장소',
+        '쇼핑',
+        '음악',
+      };
+
+      if (knownCategories.contains(firstTag)) {
+        return firstTag;
+      }
+    }
+
+    return category;
+  }
+
+  List<String> getImageUrls(Map<String, dynamic> post) {
+    final List<String> result = [];
+
+    final rawImageUrls = post['imageUrls'];
+    if (rawImageUrls is List) {
+      result.addAll(
+        rawImageUrls
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .where((e) => e != 'uploaded_image')
+            .where((e) => e != 'uploaded_file'),
+      );
+    }
+
+    final rawImageUrlsSnake = post['image_urls'];
+    if (rawImageUrlsSnake is List) {
+      result.addAll(
+        rawImageUrlsSnake
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .where((e) => e != 'uploaded_image')
+            .where((e) => e != 'uploaded_file'),
+      );
+    }
+
+    return result.toSet().toList();
+  }
+
+  String normalizeImageUrl(String imageUrl) {
+    final url = imageUrl.trim();
+
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+
+    if (url.startsWith('/')) {
+      return 'http://127.0.0.1:8000$url';
+    }
+
+    return 'http://127.0.0.1:8000/$url';
+  }
+
   Color getCategoryChipColor(String category) {
     switch (category) {
       case '자기계발':
@@ -259,6 +354,107 @@ class _HomeViewState extends State<HomeView> {
     }
   }
 
+  Widget buildThumbnail(String imageUrl) {
+    final fixedUrl = normalizeImageUrl(imageUrl);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        width: 116,
+        height: 116,
+        child: Image.network(
+          fixedUrl,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget buildSummaryLine(String line, {double height = 1.6}) {
+    final trimmed = line.trim();
+
+    if (isNumberedLine(trimmed)) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            trimmed,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 14,
+              height: height,
+              fontWeight: FontWeight.w500,
+              color: AppColors.charcoal,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final cleaned = trimmed.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), '');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '• ',
+            style: TextStyle(fontSize: 14),
+          ),
+          Expanded(
+            child: Text(
+              cleaned,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                height: height,
+                fontWeight: FontWeight.w500,
+                color: AppColors.charcoal,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildSummaryArea({
+    required List<String> summaryLines,
+    required List<String> imageUrls,
+  }) {
+    if (imageUrls.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: summaryLines
+            .map((line) => buildSummaryLine(line))
+            .toList(),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        buildThumbnail(imageUrls.first),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: summaryLines
+                .map((line) => buildSummaryLine(line))
+                .toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget buildPostCard(
     Map<String, dynamic> post, {
     bool showReadIcon = true,
@@ -268,11 +464,12 @@ class _HomeViewState extends State<HomeView> {
     final bool isRead = post['isRead'] ?? false;
     final bool isFavorite = post['isFavorite'] ?? false;
     final bool isPinned = post['isPinned'] ?? false;
-    final String category = (post['category'] ?? '기타').toString();
+    final String category = getEffectiveCategory(post);
     final String dateText = formatDate(post['createdAt']);
     final String title = getDisplayTitle(post);
     final List<String> summaryLines = getSummaryLines(post);
     final List<String> tags = getTags(post);
+    final List<String> imageUrls = getImageUrls(post);
 
     final Color cardBackgroundColor =
         isRead ? const Color(0xFFF6F6F6) : AppColors.surface;
@@ -345,13 +542,9 @@ class _HomeViewState extends State<HomeView> {
                       await toggleReadStatus(id, isRead);
                     },
                     child: Icon(
-                      isRead
-                          ? Icons.check_circle
-                          : Icons.check_circle_outline,
+                      isRead ? Icons.check_circle : Icons.check_circle_outline,
                       size: 20,
-                      color: isRead
-                          ? AppColors.success
-                          : AppColors.textDisabled,
+                      color: isRead ? AppColors.success : AppColors.textDisabled,
                     ),
                   ),
                 ],
@@ -413,32 +606,9 @@ class _HomeViewState extends State<HomeView> {
               ),
             ),
             const SizedBox(height: 16),
-            ...summaryLines.map(
-              (line) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '• ',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                    Expanded(
-                      child: Text(
-                        line,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          height: 1.6,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.charcoal,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            buildSummaryArea(
+              summaryLines: summaryLines,
+              imageUrls: imageUrls,
             ),
             const SizedBox(height: 14),
             const Divider(color: AppColors.divider),
@@ -475,7 +645,7 @@ class _HomeViewState extends State<HomeView> {
                 const Row(
                   children: [
                     Text(
-                      '원본 보기',
+                      '상세 보기',
                       style: TextStyle(
                         fontSize: 14,
                         color: AppColors.textSecondary,

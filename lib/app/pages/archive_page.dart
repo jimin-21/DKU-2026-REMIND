@@ -101,7 +101,7 @@ class _ArchivePageState extends State<ArchivePage> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('컬렉션으로 이동했습니다.'),
+        content: Text('컬렉션에 추가했습니다.'),
         duration: Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
       ),
@@ -221,6 +221,29 @@ class _ArchivePageState extends State<ArchivePage> {
     return '제목 없음';
   }
 
+  String getEffectiveCategory(Map<String, dynamic> post) {
+    final category = (post['category'] ?? '기타').toString().trim();
+
+    if (category != '기타') return category;
+
+    final tags = post['tags'];
+
+    if (tags is List && tags.isNotEmpty) {
+      final firstTag = tags.first.toString().replaceAll('#', '').trim();
+
+      if (mainCategoryNames.contains(firstTag)) {
+        return firstTag;
+      }
+    }
+
+    return category;
+  }
+
+  bool isNumberedLine(String line) {
+    final numbers = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+    return numbers.any((number) => line.trim().startsWith(number));
+  }
+
   List<String> getSummaryLines(Map<String, dynamic> post) {
     final summary = (post['summary'] ?? '').toString().trim();
     final url = (post['url'] ?? '').toString().trim();
@@ -229,6 +252,14 @@ class _ArchivePageState extends State<ArchivePage> {
       return summary
           .split('\n')
           .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .map((e) {
+            if (isNumberedLine(e)) {
+              return e;
+            }
+
+            return e.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), '');
+          })
           .where((e) => e.isNotEmpty)
           .take(3)
           .toList();
@@ -271,6 +302,49 @@ class _ArchivePageState extends State<ArchivePage> {
     }
   }
 
+  List<String> getImageUrls(Map<String, dynamic> post) {
+    final List<String> result = [];
+
+    final rawImageUrls = post['imageUrls'];
+    if (rawImageUrls is List) {
+      result.addAll(
+        rawImageUrls
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty),
+      );
+    }
+
+    final rawImageUrlsSnake = post['image_urls'];
+    if (rawImageUrlsSnake is List) {
+      result.addAll(
+        rawImageUrlsSnake
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty),
+      );
+    }
+
+    final thumbnail = (post['thumbnail'] ?? '').toString().trim();
+    if (thumbnail.isNotEmpty) {
+      result.add(thumbnail);
+    }
+
+    return result.toSet().toList();
+  }
+
+  String normalizeImageUrl(String imageUrl) {
+    final url = imageUrl.trim();
+
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+
+    if (url.startsWith('/')) {
+      return 'http://127.0.0.1:8000$url';
+    }
+
+    return 'http://127.0.0.1:8000/$url';
+  }
+
   Color getCategoryChipColor(String category) {
     switch (category) {
       case '자기계발':
@@ -296,6 +370,114 @@ class _ArchivePageState extends State<ArchivePage> {
     return mainCategoryNames[dynamicIndex];
   }
 
+  Widget buildThumbnail(String imageUrl) {
+    final fixedUrl = normalizeImageUrl(imageUrl);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        width: 116,
+        height: 116,
+        color: const Color(0xFFF3F4F4),
+        child: Image.network(
+          fixedUrl,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return const Center(
+              child: Icon(
+                Icons.image_not_supported_outlined,
+                size: 32,
+                color: AppColors.textDisabled,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget buildSummaryLine(String line, {double height = 1.6}) {
+    final trimmed = line.trim();
+
+    if (isNumberedLine(trimmed)) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            trimmed,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 14,
+              height: height,
+              fontWeight: FontWeight.w500,
+              color: AppColors.charcoal,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final cleaned = trimmed.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), '');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '• ',
+            style: TextStyle(fontSize: 14),
+          ),
+          Expanded(
+            child: Text(
+              cleaned,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                height: height,
+                fontWeight: FontWeight.w500,
+                color: AppColors.charcoal,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildSummaryArea({
+    required List<String> summaryLines,
+    required List<String> imageUrls,
+  }) {
+    if (imageUrls.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: summaryLines
+            .map((line) => buildSummaryLine(line))
+            .toList(),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        buildThumbnail(imageUrls.first),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: summaryLines
+                .map((line) => buildSummaryLine(line, height: 1.5))
+                .toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filteredPosts = posts.where((post) {
@@ -306,7 +488,7 @@ class _ArchivePageState extends State<ArchivePage> {
       final isFavorite = post['isFavorite'] ?? false;
       final isDeleted = post['isDeleted'] ?? false;
       final isCollected = post['isCollected'] ?? false;
-      final category = (post['category'] ?? '').toString();
+      final category = getEffectiveCategory(post);
 
       if (isDeleted == true) return false;
       if (isCollected == true) return false;
@@ -454,14 +636,14 @@ class _ArchivePageState extends State<ArchivePage> {
                             final bool isRead = post['isRead'] ?? false;
                             final bool isFavorite = post['isFavorite'] ?? false;
                             final bool isPinned = post['isPinned'] ?? false;
-                            final String category =
-                                (post['category'] ?? '기타').toString();
+                            final String category = getEffectiveCategory(post);
                             final String dateText =
                                 formatDate(post['createdAt']);
                             final String title = getDisplayTitle(post);
                             final List<String> summaryLines =
                                 getSummaryLines(post);
                             final List<String> tags = getTags(post);
+                            final List<String> imageUrls = getImageUrls(post);
 
                             final Color cardBackgroundColor = isRead
                                 ? const Color(0xFFF6F6F6)
@@ -616,35 +798,9 @@ class _ArchivePageState extends State<ArchivePage> {
                                       ),
                                     ),
                                     const SizedBox(height: 16),
-                                    ...summaryLines.map(
-                                      (line) => Padding(
-                                        padding:
-                                            const EdgeInsets.only(bottom: 8),
-                                        child: Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              '• ',
-                                              style: TextStyle(fontSize: 14),
-                                            ),
-                                            Expanded(
-                                              child: Text(
-                                                line,
-                                                maxLines: 2,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  height: 1.6,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: AppColors.charcoal,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                    buildSummaryArea(
+                                      summaryLines: summaryLines,
+                                      imageUrls: imageUrls,
                                     ),
                                     const SizedBox(height: 14),
                                     const Divider(color: AppColors.divider),
@@ -685,7 +841,7 @@ class _ArchivePageState extends State<ArchivePage> {
                                         const Row(
                                           children: [
                                             Text(
-                                              '원본 보기',
+                                              '상세 보기',
                                               style: TextStyle(
                                                 fontSize: 14,
                                                 color: AppColors.textSecondary,
