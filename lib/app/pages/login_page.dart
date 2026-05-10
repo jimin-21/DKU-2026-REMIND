@@ -135,14 +135,11 @@ class _LoginPageState extends State<LoginPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(24, 56, 24, 32),
           children: [
-            const Text(
-              'ReSee',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 38,
-                fontWeight: FontWeight.w800,
-                color: AppColors.charcoal,
-              ),
+            Image.asset(
+              'assets/images/resee_wordmark_black.png',
+              width: 150,
+              height: 70,
+              fit: BoxFit.contain,
             ),
             const SizedBox(height: 12),
             const Text(
