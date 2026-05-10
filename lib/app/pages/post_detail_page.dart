@@ -18,6 +18,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
 
   bool isLoading = true;
   bool isFavorite = false;
+  bool isRead = false;
   bool isEditingSummary = false;
   bool isOriginalExpanded = false;
 
@@ -60,6 +61,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
       post = data;
       isLoading = false;
       isFavorite = data?['isFavorite'] ?? false;
+      isRead = data?['isRead'] ?? false;
       summaryController.text = (data?['summary'] ?? '').toString();
       memoController.text = (data?['memo'] ?? '').toString();
     });
@@ -73,6 +75,26 @@ class _PostDetailPageState extends State<PostDetailPage> {
 
     await _firestoreService.updateFavoriteStatus(id, !currentValue);
     await loadPost();
+  }
+
+  Future<void> toggleRead() async {
+    if (post == null) return;
+
+    final id = post!['id'].toString();
+    final currentValue = post!['isRead'] ?? false;
+
+    await _firestoreService.updateReadStatus(id, !currentValue);
+    await loadPost();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(!currentValue ? '읽음으로 표시했습니다.' : '읽지 않음으로 표시했습니다.'),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Future<void> markAsMastered() async {
@@ -244,6 +266,49 @@ class _PostDetailPageState extends State<PostDetailPage> {
     return ['요약 정보가 없습니다.'];
   }
 
+  bool isNumberedLine(String line) {
+    final numbers = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+    return numbers.any((number) => line.trim().startsWith(number));
+  }
+
+  Widget buildSummaryLine(String line) {
+    final trimmed = line.trim();
+
+    if (isNumberedLine(trimmed)) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            trimmed,
+            style: const TextStyle(height: 1.6),
+          ),
+        ),
+      );
+    }
+
+    final cleaned = trimmed.replaceFirst(
+      RegExp(r'^[•\-\*]\s*'),
+      '',
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('• '),
+          Expanded(
+            child: Text(
+              cleaned,
+              style: const TextStyle(height: 1.6),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   List<String> getImageUrls() {
     final raw = post?['imageUrls'];
 
@@ -303,7 +368,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       );
                     },
                   ),
-
                   Positioned(
                     top: 12,
                     left: 16,
@@ -326,7 +390,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       ),
                     ),
                   ),
-
                   Positioned(
                     top: 8,
                     right: 8,
@@ -339,7 +402,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       ),
                     ),
                   ),
-
                   if (imageUrls.length > 1 && currentIndex > 0)
                     Positioned(
                       left: 8,
@@ -361,7 +423,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         ),
                       ),
                     ),
-
                   if (imageUrls.length > 1 && currentIndex < imageUrls.length - 1)
                     Positioned(
                       right: 8,
@@ -623,6 +684,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
         ),
         actions: [
           IconButton(
+            tooltip: isRead ? '읽음' : '읽지 않음',
+            onPressed: toggleRead,
+            icon: Icon(
+              isRead ? Icons.check_circle : Icons.check_circle_outline,
+              color: isRead ? const Color(0xFF95DDB4) : AppColors.charcoal,
+            ),
+          ),
+          IconButton(
             onPressed: toggleFavorite,
             icon: Icon(
               isFavorite ? Icons.star : Icons.star_border,
@@ -715,7 +784,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
             )
           else
             const Text(
-              '원본 링크 없이 저장된 이미지 콘텐츠입니다.',
+              '이미지로 저장된 콘텐츠입니다.',
               style: TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 13,
@@ -765,27 +834,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
                   ),
                   if (!isEditingSummary)
                     Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: summaryList
-                          .map(
-                            (line) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('• '),
-                                  Expanded(
-                                    child: Text(
-                                      line.replaceFirst(
-                                        RegExp(r'^[•\-\*]\s*'),
-                                        '',
-                                      ),
-                                      style: const TextStyle(height: 1.6),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
+                          .map((line) => buildSummaryLine(line))
                           .toList(),
                     )
                   else

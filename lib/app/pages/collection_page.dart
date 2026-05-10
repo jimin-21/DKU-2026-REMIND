@@ -138,7 +138,7 @@ class _CollectionPageState extends State<CollectionPage> {
     } else if (tab == 1) {
       Navigator.pushNamed(context, AppRoutes.home);
     } else if (tab == 2) {
-      Navigator.pushNamed(context, AppRoutes.collection);
+      loadCollectedPosts();
     }
   }
 
@@ -200,6 +200,11 @@ class _CollectionPageState extends State<CollectionPage> {
     return '제목 없음';
   }
 
+  bool isNumberedLine(String line) {
+    final numbers = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+    return numbers.any((number) => line.trim().startsWith(number));
+  }
+
   List<String> getSummaryLines(Map<String, dynamic> post) {
     final summary = (post['summary'] ?? '').toString().trim();
     final url = (post['url'] ?? '').toString().trim();
@@ -209,7 +214,13 @@ class _CollectionPageState extends State<CollectionPage> {
           .split('\n')
           .map((e) => e.trim())
           .where((e) => e.isNotEmpty)
-          .map((e) => e.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), ''))
+          .map((e) {
+            if (isNumberedLine(e)) {
+              return e;
+            }
+
+            return e.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), '');
+          })
           .where((e) => e.isNotEmpty)
           .take(3)
           .toList();
@@ -351,39 +362,68 @@ class _CollectionPageState extends State<CollectionPage> {
     );
   }
 
+  Widget buildSummaryLine(String line, {double height = 1.6}) {
+    final trimmed = line.trim();
+
+    if (isNumberedLine(trimmed)) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            trimmed,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 14,
+              height: height,
+              fontWeight: FontWeight.w500,
+              color: AppColors.charcoal,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final cleaned = trimmed.replaceFirst(RegExp(r'^[•\-\*\.·]+\s*'), '');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '• ',
+            style: TextStyle(fontSize: 14),
+          ),
+          Expanded(
+            child: Text(
+              cleaned,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                height: height,
+                fontWeight: FontWeight.w500,
+                color: AppColors.charcoal,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget buildSummaryArea({
     required List<String> summaryLines,
     required List<String> imageUrls,
   }) {
     if (imageUrls.isEmpty) {
       return Column(
-        children: summaryLines.map((line) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '• ',
-                  style: TextStyle(fontSize: 14),
-                ),
-                Expanded(
-                  child: Text(
-                    line,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      height: 1.6,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.charcoal,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }).toList(),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: summaryLines
+            .map((line) => buildSummaryLine(line))
+            .toList(),
       );
     }
 
@@ -394,33 +434,10 @@ class _CollectionPageState extends State<CollectionPage> {
         const SizedBox(width: 16),
         Expanded(
           child: Column(
-            children: summaryLines.map((line) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '• ',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                    Expanded(
-                      child: Text(
-                        line,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          height: 1.6,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.charcoal,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: summaryLines
+                .map((line) => buildSummaryLine(line))
+                .toList(),
           ),
         ),
       ],
@@ -800,7 +817,7 @@ class _CollectionPageState extends State<CollectionPage> {
                                         const Row(
                                           children: [
                                             Text(
-                                              '원본 보기',
+                                              '상세 보기',
                                               style: TextStyle(
                                                 fontSize: 14,
                                                 color:

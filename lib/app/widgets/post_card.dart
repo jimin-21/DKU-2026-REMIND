@@ -305,7 +305,7 @@ class _PostCardState extends State<PostCard> {
                   const Row(
                     children: [
                       Text(
-                        '원본 보기',
+                        '상세 보기',
                         style: TextStyle(
                           fontSize: 13,
                           color: AppColors.textSecondary,
