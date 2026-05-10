@@ -7,24 +7,23 @@ import os
 import re
 import json
 import base64
-from typing import Optional, List
+from typing import List
 from pathlib import Path
 from uuid import uuid4
-from pydantic import BaseModel
 from dotenv import load_dotenv
 from openai import OpenAI
 
 load_dotenv()
+
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 app = FastAPI()
 
-# 1. CORS 설정 수정 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True, # 쿠키/인증 헤더 허용
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -35,105 +34,449 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# --- [AI 분석 핵심 함수: 제목 생성 기능 추가] ---
+
+def clean_ocr_text(text: str) -> str:
+    if not text:
+        return ""
+
+    text = text.replace("\r\n", "\n")
+
+    text = re.sub(r"```[a-zA-Z]*", "", text)
+    text = text.replace("```", "")
+    text = text.replace("`", "")
+
+    cleaned_lines = []
+
+    for line in text.split("\n"):
+        line = line.strip()
+
+        if not line:
+            cleaned_lines.append("")
+            continue
+
+        if line.lower() in ["matomag"]:
+            continue
+
+        cleaned_lines.append(line)
+
+    text = "\n".join(cleaned_lines)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
+
+
+def is_numbered_summary(summary: str) -> bool:
+    circled_numbers = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"]
+    return any(num in summary for num in circled_numbers)
+
+
+def clean_summary_text(summary: str) -> str:
+    if not summary:
+        return ""
+
+    summary = summary.replace("\r\n", "\n")
+    summary = summary.replace("```", "").replace("`", "")
+    summary = summary.strip()
+
+    circled_numbers = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"]
+
+    # ① ② ③이 한 줄에 붙어서 오면 강제로 줄바꿈
+    for num in circled_numbers:
+        summary = summary.replace(f" {num}", f"\n{num}")
+
+    raw_lines = summary.split("\n")
+    lines = []
+
+    numbered_mode = is_numbered_summary(summary)
+
+    for raw_line in raw_lines:
+        line = raw_line.strip()
+
+        if not line:
+            continue
+
+        line = line.replace("•", "").strip()
+        line = line.lstrip("-").strip()
+
+        # 1. 2. 3. 같은 일반 번호 제거
+        line = re.sub(r"^\d+[\).\s]+", "", line).strip()
+
+        if numbered_mode:
+            has_circled = any(line.startswith(num) for num in circled_numbers)
+
+            if not has_circled:
+                index = len(lines)
+                if index < len(circled_numbers):
+                    line = f"{circled_numbers[index]} {line}"
+
+            lines.append(line)
+        else:
+            if not line.startswith("•"):
+                line = f"• {line}"
+
+            lines.append(line)
+
+    if numbered_mode:
+        return "\n".join(lines[:10])
+
+    return "\n".join(lines[:5])
+
+
 def get_ai_summary(content: str):
     if not content or content == "내용 없음" or len(content.strip()) < 10:
         return "제목 없음", "정보를 추출할 본문이 부족합니다.", "기타", ["내용부족"]
 
     try:
-        # [수정] AI에게 '제목(title)'까지 지으라고 명시적으로 지시합니다.
         prompt = f"""
-        너는 콘텐츠 분석 전문가야. 아래 본문을 한국어로 분석해서 반드시 JSON만 반환해.
-        [규칙]
-        1. title: 본문 내용을 대표하는 매력적인 제목 (15자 내외)
-        2. summary: 핵심 내용을 "• 항목: 설명" 형식의 리스트로 작성.
-        3. category: 장소, 자기계발, 쇼핑, 운동, 기타 중 하나만 선택.
-        4. tags: 키워드 2~3개 배열.
-        본문: {content[:4000]}
-        """
+너는 저장형 콘텐츠 앱 ReSee의 요약 전문가야.
+아래 본문을 한국어로 분석해서 반드시 JSON만 반환해.
+
+[출력 JSON 형식]
+{{
+  "title": "제목",
+  "summary": "요약",
+  "category": "카테고리",
+  "tags": ["태그1", "태그2", "태그3"]
+}}
+
+[title 규칙]
+1. 본문 내용을 대표하는 자연스러운 제목
+2. 12~18자 정도
+3. 과장된 광고 문구 금지
+4. 너무 추상적인 제목 금지
+5. 이미지가 여러 장이어도 전체 주제를 하나로 묶어서 제목 작성
+
+[summary 핵심 규칙]
+1. 중요한 정보는 빠뜨리지 말 것.
+2. OCR 원문을 그대로 복사하지 말고 의미를 정리할 것.
+3. 가격, 상품명, 장소명, 날짜, 개수, 순서, 핵심 행동은 유지할 것.
+4. 없는 내용은 지어내지 말 것.
+5. 같은 의미를 반복하지 말 것.
+6. 절대 중간에 ...으로 줄이지 말 것.
+7. 항목끼리는 반드시 줄바꿈할 것.
+
+[목록형 콘텐츠 요약 규칙]
+1. 원문이 "TOP 10", "10가지", "5가지", "체크리스트", "방법", "습관", "순서", "루틴"처럼 목록형 콘텐츠면 번호형 요약으로 작성.
+2. 번호형 요약은 반드시 ① ② ③ ④ ⑤ ⑥ ⑦ ⑧ ⑨ ⑩ 형식을 사용.
+3. 원문이 10가지면 가능한 한 10개를 모두 유지.
+4. 원문이 5가지면 5개를 유지.
+5. 각 항목은 반드시 줄바꿈해서 작성.
+6. 각 항목은 "① 항목: 설명" 형식으로 작성.
+7. 설명은 핵심 의미가 빠지지 않을 정도로 자연스럽게 작성.
+8. 한 줄에 여러 번호를 붙여 쓰지 말 것.
+
+[일반 콘텐츠 요약 규칙]
+1. 목록형 콘텐츠가 아니면 핵심만 3~5개 요약.
+2. 일반 요약은 "• 항목: 설명" 형식 사용.
+3. 각 항목은 반드시 줄바꿈해서 작성.
+4. 너무 긴 문장 금지.
+5. 쉼표로 길게 이어 쓰지 말 것.
+
+[상품 콘텐츠 요약 규칙]
+1. 상품이 여러 개 나오면 상품별로 요약.
+2. 상품명, 가격, 핵심 특징을 최대한 유지.
+3. 상품이 3개 이상이면 3~5개까지 요약.
+4. 상품 요약은 "• 상품명: 가격/특징" 형식 사용.
+
+[category 규칙]
+1. 반드시 아래 중 하나만 선택.
+2. 장소, 자기계발, 쇼핑, 운동, 기타
+
+[tags 규칙]
+1. 짧은 키워드 2~3개
+2. # 없이 단어만 작성
+3. 너무 일반적인 단어 금지
+
+[좋은 summary 예시 - 10가지 목록형]
+① 하루 10분 독서: 짧게라도 꾸준히 읽기
+② 10분 운동: 가벼운 움직임으로 몸 깨우기
+③ 하루 계획: 오늘 할 일을 먼저 정리하기
+④ 짧게 글쓰기: 생각을 문장으로 정리하기
+⑤ 목표 매일 보기: 방향을 계속 확인하기
+⑥ 감사 기록: 좋은 일에 집중하기
+⑦ 핸드폰 줄이기: 집중할 시간 확보하기
+⑧ 하루 돌아보기: 성장한 점 확인하기
+⑨ 필요한 일 줄이기: 중요한 일에 집중하기
+⑩ 새로운 것 배우기: 매일 조금씩 성장하기
+
+[좋은 summary 예시 - 일반 자기계발]
+• 짧은 독서: 하루 10분으로 생각을 확장
+• 작은 운동: 가벼운 움직임으로 몸을 깨움
+• 하루 계획: 목표를 정해 방향을 잡음
+
+[좋은 summary 예시 - 쇼핑]
+• 노이아고 백팩: 5만원대 가성비 제품
+• 미닛뮤트 백팩: 초경량 핑크 컬러
+• 스커프터 백팩: 핑크와 브라운 조합
+
+[나쁜 summary 예시]
+• 하루 10분 독서: 짧은 시간이라도 꾸준히 읽으면 지식이 쌓이고 생각의 깊이가 달라짐, 10분 운동: 가벼운 움직임으로 몸과 정신이 깨어남
+• ① 하루 10분 독서 ② 짧게 글쓰기 ③ 하루 계획 세우기
+• 이미지에 있는 내용을 모두 길게 나열한 문장
+• 원문을 그대로 복사한 문장
+• 중요한 목록 10개 중 3개만 남긴 요약
+• 중간에 ...으로 끊긴 요약
+
+본문:
+{content[:4000]}
+"""
+
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=[{"role": "system", "content": "JSON 출력기"}, {"role": "user", "content": prompt}],
+            messages=[
+                {
+                    "role": "system",
+                    "content": "너는 JSON만 반환하는 저장형 콘텐츠 요약기야.",
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
             temperature=0,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
         )
+
         res = json.loads(response.choices[0].message.content.strip())
-        return res.get("title", "분석된 제목"), res.get("summary", ""), res.get("category", "기타"), res.get("tags", [])
-    except:
+
+        title = str(res.get("title", "분석된 제목")).strip()
+        summary = str(res.get("summary", "")).strip()
+        category = str(res.get("category", "기타")).strip()
+        tags = res.get("tags", [])
+
+        allowed_categories = ["장소", "자기계발", "쇼핑", "운동", "기타"]
+        if category not in allowed_categories:
+            category = "기타"
+
+        if not isinstance(tags, list):
+            tags = []
+
+        tags = [
+            str(tag).replace("#", "").strip()
+            for tag in tags
+            if str(tag).replace("#", "").strip()
+        ][:3]
+
+        summary = clean_summary_text(summary)
+
+        return title, summary, category, tags
+
+    except Exception as e:
+        print("AI summary error:", e)
         return "분석 실패", "내용 요약 중 에러 발생", "기타", ["에러"]
 
-# --- [기존 데이터 추출 로직 유지] ---
+
 def get_instagram_data(url: str):
-    headers = {"x-rapidapi-key": RAPIDAPI_KEY or "", "x-rapidapi-host": "instagram-scraper-stable-api.p.rapidapi.com"}
+    headers = {
+        "x-rapidapi-key": RAPIDAPI_KEY or "",
+        "x-rapidapi-host": "instagram-scraper-stable-api.p.rapidapi.com",
+    }
+
     match = re.search(r"/(?:p|reel|reels)/([A-Za-z0-9_-]+)", url)
     media_code = match.group(1) if match else ""
+
     try:
-        res = requests.get("https://instagram-scraper-stable-api.p.rapidapi.com/get_media_data_v2.php", headers=headers, params={"media_code": media_code}, timeout=10).json()
+        res = requests.get(
+            "https://instagram-scraper-stable-api.p.rapidapi.com/get_media_data_v2.php",
+            headers=headers,
+            params={"media_code": media_code},
+            timeout=10,
+        ).json()
+
         item = (res.get("data") or res.get("items") or [res])[0]
-        content = item.get("edge_media_to_caption", {}).get("edges", [{}])[0].get("node", {}).get("text") or item.get("caption", {}).get("text") or "내용 없음"
+
+        content = (
+            item.get("edge_media_to_caption", {})
+            .get("edges", [{}])[0]
+            .get("node", {})
+            .get("text")
+            or item.get("caption", {}).get("text")
+            or "내용 없음"
+        )
+
         thumbnail = item.get("display_url") or item.get("thumbnail_url") or ""
+
         return "Instagram 콘텐츠", content, thumbnail
-    except: return "Instagram 콘텐츠", "내용 없음", ""
+
+    except Exception as e:
+        print("Instagram data error:", e)
+        return "Instagram 콘텐츠", "내용 없음", ""
+
 
 def get_web_data(url: str):
     try:
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        res = requests.get(
+            url,
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10,
+        )
+
         soup = BeautifulSoup(res.text, "html.parser")
+
         title = soup.title.string.strip() if soup.title else "제목 없음"
-        body = soup.body.get_text(separator="\n", strip=True)[:3000]
+
+        body = ""
+        if soup.body:
+            body = soup.body.get_text(separator="\n", strip=True)[:3000]
+
         og = soup.find("meta", property="og:image")
-        return title, body, (og.get("content") if og else "")
-    except: return "제목 없음", "내용 없음", ""
+        thumbnail = og.get("content") if og else ""
+
+        return title, body or "내용 없음", thumbnail
+
+    except Exception as e:
+        print("Web data error:", e)
+        return "제목 없음", "내용 없음", ""
+
 
 def extract_image_text(base64_image: str):
-    res = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": [{"type": "text", "text": "텍스트 추출"}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}]}],
-        temperature=0
-    )
-    return res.choices[0].message.content
+    try:
+        res = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": """
+이미지 안의 텍스트와 핵심 정보를 한국어로 정리해줘.
 
-# --- [API 엔드포인트: 요청 규격 반영] ---
+규칙:
+1. 절대 ``` 코드블록을 쓰지 마.
+2. 마크다운 형식을 쓰지 마.
+3. 이미지에 보이는 상품명, 가격, 핵심 설명을 줄바꿈으로 정리해.
+4. matomag 같은 반복 출처/계정명은 제외해.
+5. 없는 내용은 지어내지 마.
+6. 결과는 순수 텍스트만 반환해.
+""",
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            },
+                        },
+                    ],
+                }
+            ],
+            temperature=0,
+        )
+
+        return clean_ocr_text(res.choices[0].message.content)
+
+    except Exception as e:
+        print("Image OCR error:", e)
+        return "이미지 텍스트 추출 중 오류가 발생했습니다."
+
 
 @app.post("/analyze")
 def analyze_url(url: str):
-    _, content, thumb = get_instagram_data(url) if "instagram.com" in url else get_web_data(url)
-    ai_t, summ, cat, tags = get_ai_summary(content)
-    # 응답 필드 통일: title, summary, category, tags, thumbnail, originalText
-    return {"status": "ACTIVE", "url": url, "title": ai_t, "summary": summ, "category": cat, "tags": tags, "thumbnail": thumb, "originalText": content}
+    if "instagram.com" in url:
+        _, content, thumbnail = get_instagram_data(url)
+    else:
+        _, content, thumbnail = get_web_data(url)
+
+    ai_title, summary, category, tags = get_ai_summary(content)
+
+    return {
+        "status": "ACTIVE",
+        "url": url,
+        "title": ai_title,
+        "summary": summary,
+        "category": category,
+        "tags": tags,
+        "thumbnail": thumbnail,
+        "originalText": content,
+        "contentType": "link",
+    }
+
 
 @app.post("/analyze/image")
 async def analyze_image(files: List[UploadFile] = File(...)):
-    all_text = ""
+    image_texts = []
+
     for i, file in enumerate(files, 1):
         base64_img = base64.b64encode(await file.read()).decode("utf-8")
-        all_text += f"\n[이미지 {i}]\n{extract_image_text(base64_img)}"
-    
-    # [수정] 고정 제목 대신 AI가 텍스트를 기반으로 제목을 지어줍니다.
-    ai_t, summ, cat, tags = get_ai_summary(all_text)
-    return {"status": "ACTIVE", "title": ai_t, "summary": summ, "category": cat, "tags": tags, "originalText": all_text}
+        extracted_text = extract_image_text(base64_img)
+
+        image_texts.append(f"[이미지 {i}]\n{extracted_text}")
+
+    all_text = "\n\n".join(image_texts).strip()
+
+    ai_title, summary, category, tags = get_ai_summary(all_text)
+
+    return {
+        "status": "ACTIVE",
+        "url": "uploaded_file",
+        "title": ai_title,
+        "summary": summary,
+        "category": category,
+        "tags": tags,
+        "thumbnail": "",
+        "originalText": all_text,
+        "contentType": "image",
+    }
+
 
 @app.post("/analyze/complex")
 async def analyze_complex(url: str, files: List[UploadFile] = File(...)):
-    _, url_c, thumb = get_instagram_data(url) if "instagram.com" in url else get_web_data(url)
-    img_text = ""
+    if "instagram.com" in url:
+        _, url_content, thumbnail = get_instagram_data(url)
+    else:
+        _, url_content, thumbnail = get_web_data(url)
+
+    image_texts = []
+
     for i, file in enumerate(files, 1):
         base64_img = base64.b64encode(await file.read()).decode("utf-8")
-        img_text += f"\n[이미지 {i}]\n{extract_image_text(base64_img)}"
-    
-    combined = f"[링크 정보]\n{url_c}\n\n[이미지 텍스트]\n{img_text}"
-    ai_t, summ, cat, tags = get_ai_summary(combined)
-    return {"status": "ACTIVE", "url": url, "title": ai_t, "summary": summ, "category": cat, "tags": tags, "thumbnail": thumb, "originalText": combined}
+        extracted_text = extract_image_text(base64_img)
+
+        image_texts.append(f"[이미지 {i}]\n{extracted_text}")
+
+    image_text = "\n\n".join(image_texts).strip()
+
+    combined = f"[링크 정보]\n{url_content}\n\n[이미지 텍스트]\n{image_text}".strip()
+
+    ai_title, summary, category, tags = get_ai_summary(combined)
+
+    return {
+        "status": "ACTIVE",
+        "url": url,
+        "title": ai_title,
+        "summary": summary,
+        "category": category,
+        "tags": tags,
+        "thumbnail": thumbnail,
+        "originalText": combined,
+        "contentType": "complex",
+    }
+
 
 @app.post("/upload/images")
 async def upload_images(request: Request, files: List[UploadFile] = File(...)):
     urls = []
+
     for file in files:
         contents = await file.read()
-        filename = f"{uuid4().hex}{os.path.splitext(file.filename or '')[1].lower() or '.jpg'}"
-        with open(UPLOAD_DIR / filename, "wb") as f: f.write(contents)
+
+        extension = os.path.splitext(file.filename or "")[1].lower()
+        if not extension:
+            extension = ".jpg"
+
+        filename = f"{uuid4().hex}{extension}"
+
+        with open(UPLOAD_DIR / filename, "wb") as f:
+            f.write(contents)
+
         urls.append(f"{str(request.base_url).rstrip('/')}/uploads/{filename}")
-    return {"status": "success", "imageUrls": urls}
+
+    return {
+        "status": "success",
+        "imageUrls": urls,
+    }
+
 
 @app.get("/")
-def health(): return {"status": "ok"}
+def health():
+    return {"status": "ok"}
