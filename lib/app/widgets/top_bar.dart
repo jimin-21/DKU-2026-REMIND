@@ -26,12 +26,28 @@ class TopBar extends StatelessWidget {
           ),
         ),
       ),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Row(
         children: [
+          GestureDetector(
+            onTap: () {
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                AppRoutes.home,
+                (route) => false,
+              );
+            },
+            child: Image.asset(
+              'assets/images/resee_wordmark_black.png',
+              width: 95,
+              height: 42,
+              fit: BoxFit.contain,
+            ),
+          ),
+          const SizedBox(width: 8),
           Expanded(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
               decoration: BoxDecoration(
                 color: AppColors.surface,
                 borderRadius: BorderRadius.circular(AppRadii.searchBar),
@@ -39,8 +55,12 @@ class TopBar extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.search, color: AppColors.textDisabled),
-                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.search,
+                    color: AppColors.textDisabled,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: TextFormField(
                       initialValue: searchQuery,
@@ -100,6 +120,8 @@ class _CircleIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: 42,
+      height: 42,
       decoration: BoxDecoration(
         color: backgroundColor,
         shape: BoxShape.circle,
@@ -107,7 +129,12 @@ class _CircleIconButton extends StatelessWidget {
       ),
       child: IconButton(
         onPressed: onTap,
-        icon: Icon(icon, color: iconColor),
+        padding: EdgeInsets.zero,
+        icon: Icon(
+          icon,
+          color: iconColor,
+          size: 23,
+        ),
       ),
     );
   }

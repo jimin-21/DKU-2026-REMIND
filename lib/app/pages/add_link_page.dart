@@ -264,6 +264,56 @@ class _AddLinkPageState extends State<AddLinkPage> {
     );
   }
 
+  Widget buildLogoHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(
+          color: AppColors.peachDustLight,
+          width: 2,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Image.asset(
+            'assets/images/resee_app_icon.png',
+            width: 100,
+            height: 100,
+            fit: BoxFit.contain,
+          ),
+          const SizedBox(width: 18),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '콘텐츠를 저장하고\nAI 요약을 받아보세요',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 20,
+                    color: AppColors.charcoal,
+                    height: 1.35,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  '링크만 또는 사진만 올려도 괜찮아요',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   @override
   Widget build(BuildContext context) {
     final inputUrl = urlController.text.trim();
@@ -293,47 +343,7 @@ class _AddLinkPageState extends State<AddLinkPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadii.card),
-              border: Border.all(
-                color: AppColors.peachDustLight,
-                width: 2,
-              ),
-            ),
-            child: const Column(
-              children: [
-                Icon(
-                  Icons.auto_awesome,
-                  size: 44,
-                  color: AppColors.peachDust,
-                ),
-                SizedBox(height: 16),
-                Text(
-                  '원본 링크와 참고 이미지를\n함께 저장할 수 있어요',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 20,
-                    color: AppColors.charcoal,
-                    height: 1.5,
-                  ),
-                ),
-                SizedBox(height: 10),
-                Text(
-                  '링크만 또는 사진만 올려도 괜찮아요',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 14,
-                    height: 1.6,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          buildLogoHeader(),
           const SizedBox(height: 28),
           const Text(
             '링크 붙여넣기',

@@ -271,18 +271,66 @@ class _PostDetailPageState extends State<PostDetailPage> {
     return numbers.any((number) => line.trim().startsWith(number));
   }
 
+  Widget buildStyledSummaryText(String text, {double height = 1.65}) {
+    final trimmed = text.trim();
+    final cleaned = trimmed.replaceFirst(
+      RegExp(r'^[•\-\*]\s*'),
+      '',
+    );
+
+    final colonIndex = cleaned.indexOf(':');
+
+    if (colonIndex == -1) {
+      return Text(
+        cleaned,
+        style: TextStyle(
+          height: height,
+          fontSize: 16,
+          color: AppColors.charcoal,
+          fontWeight: FontWeight.w400,
+        ),
+      );
+    }
+
+    final title = cleaned.substring(0, colonIndex + 1);
+    final body = cleaned.substring(colonIndex + 1).trimLeft();
+
+    return RichText(
+      text: TextSpan(
+        style: TextStyle(
+          height: height,
+          fontSize: 16,
+          color: AppColors.charcoal,
+        ),
+        children: [
+          TextSpan(
+            text: title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: AppColors.charcoal,
+            ),
+          ),
+          TextSpan(
+            text: body.isNotEmpty ? ' $body' : '',
+            style: const TextStyle(
+              fontWeight: FontWeight.w400,
+              color: AppColors.charcoal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget buildSummaryLine(String line) {
     final trimmed = line.trim();
 
     if (isNumberedLine(trimmed)) {
       return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(bottom: 12),
         child: Align(
           alignment: Alignment.centerLeft,
-          child: Text(
-            trimmed,
-            style: const TextStyle(height: 1.6),
-          ),
+          child: buildStyledSummaryText(trimmed),
         ),
       );
     }
@@ -293,18 +341,37 @@ class _PostDetailPageState extends State<PostDetailPage> {
     );
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('• '),
-          Expanded(
-            child: Text(
-              cleaned,
-              style: const TextStyle(height: 1.6),
+          const Text(
+            '• ',
+            style: TextStyle(
+              fontSize: 16,
+              color: AppColors.charcoal,
+              height: 1.65,
             ),
           ),
+          Expanded(
+            child: buildStyledSummaryText(cleaned),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget buildSummaryTitleText(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Text(
+        '<$title>',
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+          color: AppColors.charcoal,
+          height: 1.45,
+        ),
       ),
     );
   }
@@ -423,7 +490,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         ),
                       ),
                     ),
-                  if (imageUrls.length > 1 && currentIndex < imageUrls.length - 1)
+                  if (imageUrls.length > 1 &&
+                      currentIndex < imageUrls.length - 1)
                     Positioned(
                       right: 8,
                       top: 0,
@@ -800,6 +868,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
@@ -832,6 +901,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  buildSummaryTitleText(title),
                   if (!isEditingSummary)
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
